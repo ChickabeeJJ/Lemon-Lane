@@ -23,7 +23,8 @@ npm run dev          # http://localhost:5173  (add ?nosdk to skip loading the Cr
 | Sell basket lemons | Tap the Sell Crate, or **Sell** | `Q` |
 | Spin the Lucky Wheel | Tap the wheel | — |
 | Pick ripe lemons | Tap a tree, or the **Pick** button | `Space` |
-| Squeeze the press faster | Tap the press, or **Squeeze** | `S` |
+| Squeeze the press (in the gold = Perfect) | Tap the press, or **Squeeze** | `S` |
+| Take / deliver bulk orders | Tap the Order Board; **Deliver** on the order pill | — |
 | Serve the next customer | Tap the stand/queue, or **Serve** | `E` / `Enter` |
 | Open a panel | Tabs at the bottom | `1`–`7` |
 | Close panel / dialog | ✕ | `Esc` |

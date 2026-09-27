@@ -34,7 +34,8 @@ export type UpgradeId =
   | "juice_factory"
   | "fountain"
   | "lucky_wheel"
-  | "golden_statue";
+  | "golden_statue"
+  | "order_board";
 
 /** Explorable zones, left to right. The camera moves between them with arrows. */
 export type ZoneId = "grove" | "home" | "market" | "fair";
@@ -109,7 +110,8 @@ export type StatId =
   | "lemonPrice"
   | "autoSell"
   | "passiveIncome"
-  | "wheelCooldown";
+  | "wheelCooldown"
+  | "contractBonus";
 
 /**
  * A stat modifier applied once per level of its source (regions count as level 1).
@@ -217,7 +219,9 @@ export type QuestKind =
   | "golden"
   | "sunrise"
   | "sell"
-  | "spin";
+  | "spin"
+  | "perfect"
+  | "contract";
 
 export interface QuestDef {
   id: string;
@@ -247,4 +251,11 @@ export interface WheelSegment {
   kind: WheelRewardKind;
   weight: number;
   color: string;
+}
+
+export interface ContractTier {
+  count: [number, number];
+  seconds: number;
+  /** Reward = count × drink value × mult. */
+  mult: number;
 }

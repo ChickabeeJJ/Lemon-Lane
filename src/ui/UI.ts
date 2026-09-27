@@ -89,6 +89,7 @@ const STAT_FMT: Record<StatId, (v: number) => string> = {
   autoSell: (v) => (v >= 1 ? "On" : "Off"),
   passiveIncome: (v) => v.toFixed(0),
   wheelCooldown: (v) => `${Math.round(v / 60)}m`,
+  contractBonus: (v) => `+${pct(v)}`,
   growthSpeed: mult,
   fruitSlots: (v) => String(slotsOf(v)),
   goldenChance: pct,
@@ -171,6 +172,14 @@ export class UI implements GameHooks {
   private arrowRight!: HTMLButtonElement;
   private zoneBanner!: HTMLElement;
   private zoneDots = new Map<ZoneId, HTMLElement>();
+  private demandPill!: HTMLButtonElement;
+  private demandIcon!: HTMLImageElement;
+  private demandText!: HTMLElement;
+  private contractPill!: HTMLElement;
+  private contractIcon!: HTMLImageElement;
+  private contractText!: HTMLElement;
+  private contractDeliver!: HTMLButtonElement;
+  private closeContracts: (() => void) | null = null;
   private modalOpen = 0;
   private lastRefresh = 0;
   private game!: Game;
@@ -261,7 +270,25 @@ export class UI implements GameHooks {
       this.zoneDots.set(z.id, d);
       map.append(d);
     }
-    this.stage.append(hud, this.goal, this.toasts, this.arrowLeft, this.arrowRight, this.zoneBanner, map);
+    // Info stack: Market Demand + active order
+    this.demandIcon = img(recipeIcon("classic"));
+    this.demandText = el("span");
+    this.demandPill = el("button", { class: "pill info-pill demand", hidden: true }, [this.demandIcon, this.demandText]);
+    this.demandPill.addEventListener("click", () => {
+      const d = this.game.demand();
+      if (d && !d.active && this.game.g.recipes.includes(d.recipe)) this.game.useRecipe(d.recipe);
+      else this.toggleTab("recipes");
+    });
+    this.contractIcon = img(recipeIcon("classic"));
+    this.contractText = el("span");
+    this.contractDeliver = el("button", { class: "btn small green", text: t("ui.contract.deliver") });
+    this.contractDeliver.addEventListener("click", () => this.game.deliverContract());
+    const contractOpen = el("button", { class: "info-link", "aria-label": t("ui.contract.title") }, [this.contractIcon, this.contractText]);
+    contractOpen.addEventListener("click", () => this.openContracts());
+    this.contractPill = el("div", { class: "pill info-pill contract", hidden: true }, [contractOpen, this.contractDeliver]);
+    const info = el("div", { class: "info-stack" }, [this.demandPill, this.contractPill]);
+
+    this.stage.append(hud, this.goal, this.toasts, this.arrowLeft, this.arrowRight, this.zoneBanner, map, info);
 
     // Dock: action buttons + tabs
     this.actPick = this.actionButton(lemonIcon(), "Pick", "Space", () => this.game.pick());
@@ -879,9 +906,95 @@ export class UI implements GameHooks {
     if (crate) this.actSell.disabled = !this.game.canSell();
   }
 
+  private refreshInfo(): void {
+    const d = this.game.demand();
+    this.demandPill.hidden = !d;
+    if (d) {
+      const src = recipeIcon(d.recipe);
+      if (this.demandIcon.src !== src) this.demandIcon.src = src;
+      const secs = Math.floor(d.secondsLeft);
+      const time = `${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, "0")}`;
+      this.demandText.textContent = `${d.active ? "✓ " : ""}${t("ui.demand", { ref: nameOf("recipe", d.recipe) })} · ${time}`;
+      this.demandPill.title = d.active ? t("ui.demandActive") : t("ui.demandSwitch", { ref: nameOf("recipe", d.recipe) });
+      this.demandPill.classList.toggle("hot", d.active);
+    }
+    const c = this.game.g.contract;
+    this.contractPill.hidden = !c.active;
+    if (c.active) {
+      const src = recipeIcon(c.active.recipe);
+      if (this.contractIcon.src !== src) this.contractIcon.src = src;
+      this.contractText.textContent = t("ui.contract.pill", { a: c.delivered, b: c.active.count, t: formatDuration(this.game.contractSecondsLeft()) });
+      this.contractDeliver.disabled = !this.game.canDeliver();
+      this.contractPill.classList.toggle("urgent", this.game.contractSecondsLeft() < 30);
+    }
+  }
+
+  openContracts(): void {
+    this.closeContracts?.();
+    const g = this.game.g;
+    const c = g.contract;
+    const content: (Node | string)[] = [el("p", { text: t("ui.contract.desc") })];
+    if (c.streak > 0) content.push(el("p", { class: "streak", text: t("ui.contract.streak", { n: c.streak, p: Math.round(Math.min(TUNING.contractStreakMax, c.streak) * TUNING.contractStreakStep * 100) }) }));
+    const cards = el("div", { class: "offer-list" });
+    if (c.active) {
+      const a = c.active;
+      const deliver = el("button", { class: "btn green", text: t("ui.contract.deliver") });
+      deliver.disabled = !this.game.canDeliver();
+      deliver.addEventListener("click", () => {
+        this.game.deliverContract();
+        this.openContracts();
+      });
+      const giveUp = el("button", { class: "btn small white", text: t("ui.contract.giveUp") });
+      giveUp.addEventListener("click", () => {
+        this.game.abandonContract();
+        this.openContracts();
+      });
+      cards.append(
+        el("div", { class: "offer active" }, [
+          img(recipeIcon(a.recipe)),
+          el("div", { class: "offer-body" }, [
+            el("strong", { text: t("ui.contract.line", { n: a.count, ref: nameOf("recipe", a.recipe), t: formatDuration(a.seconds) }) }),
+            el("span", { text: t("ui.contract.progress", { a: c.delivered, b: a.count, t: formatDuration(this.game.contractSecondsLeft()) }) }),
+            el("span", { class: "reward", text: `+${formatNumber(a.reward)}` }),
+          ]),
+          el("div", { class: "offer-actions" }, [deliver, giveUp]),
+        ]),
+      );
+      if (g.activeRecipe !== a.recipe) content.push(el("p", { class: "warn", text: t("ui.contract.switch", { ref: nameOf("recipe", a.recipe) }) }));
+    } else if (c.offers.length === 0) {
+      cards.append(el("p", { class: "note", text: t("ui.contract.none") }));
+    } else {
+      c.offers.forEach((o, i) => {
+        const accept = el("button", { class: "btn", text: t("ui.contract.accept") });
+        accept.addEventListener("click", () => {
+          this.game.acceptContract(i);
+          this.openContracts();
+        });
+        cards.append(
+          el("div", { class: `offer tier${o.tier}` }, [
+            img(recipeIcon(o.recipe)),
+            el("div", { class: "offer-body" }, [
+              el("em", { text: t(`ui.contract.tier.${o.tier}`) }),
+              el("strong", { text: t("ui.contract.line", { n: o.count, ref: nameOf("recipe", o.recipe), t: formatDuration(o.seconds) }) }),
+              el("span", { class: "reward", text: `+${formatNumber(o.reward)}` }),
+            ]),
+            el("div", { class: "offer-actions" }, [accept]),
+          ]),
+        );
+      });
+    }
+    content.push(cards);
+    const close = this.modal(t("ui.contract.title"), content, [{ label: t("ui.close"), cls: "white", onClick: () => {} }]);
+    this.closeContracts = () => {
+      this.closeContracts = null;
+      close();
+    };
+  }
+
   private refreshSlow(force = false): void {
     const g = this.game.g;
     this.updateArrows();
+    this.refreshInfo();
     this.hudRate.textContent = `+${formatNumber(this.game.incomePerSec())}${t("ui.perSec")}`;
     this.hudTokensPill.hidden = g.sunnyTokens <= 0 && g.sunrises === 0;
     this.hudTokens.textContent = formatNumber(g.sunnyTokens);

@@ -59,7 +59,7 @@ export function runBot(profile: Profile, minutes: number, seed = 1, start?: Game
     if (i % actEvery === 0 && tapping) {
       const c = ctx();
       for (let k = 0; k < 4 && harvestAny(g, c, "player"); k++);
-      squeeze(g, c);
+      squeeze(g, s, c);
       serveFront(g, s, c, "player");
       // Sell when the basket is full (players do this at the Sell Crate).
       if (g.lemons >= slotsOf(c.stats.basketCap)) sellLemons(g, c, "player");

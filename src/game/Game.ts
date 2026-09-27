@@ -22,7 +22,7 @@ import { automatedRates, collectionStars, computeStats, offlineEarnings, regionC
 import { GROUND_Y, LAYOUT } from "../core/layout";
 import { claimDaily, claimQuest, evaluateQuest, noteCombo, startQuest, type ActiveQuest } from "../core/quests";
 import { createRng, type Rng } from "../core/rng";
-import { harvestAny, harvestTree, pressCanRun, sellLemons, serveFront, squeeze, step, addCoins, type SimContext, type SimEvent } from "../core/sim";
+import { harvestAny, harvestTree, pressCanRun, sellLemons, serveFront, squeeze, squeezeMeter, step, addCoins, type SimContext, type SimEvent } from "../core/sim";
 import { createFreshState, createSession, type GameState, type SessionState, type Settings } from "../core/state";
 import type { PlatformAdapter, PlatformUser } from "../platform/PlatformAdapter";
 import { Renderer, type ViewExtras } from "../render/Renderer";
@@ -34,6 +34,8 @@ import { upgradeLocked } from "../core/actions";
 import { rawLemonValue, upgradeCost } from "../core/economy";
 import { FACILITY_SPOTS, type FacilitySpotId } from "../core/layout";
 import { spinCooldownLeft, spinWheel, wheelOwned } from "../core/wheel";
+import { acceptContract, contractSecondsLeft, deliverContract, expireContract, refreshOffers } from "../core/contracts";
+import { demandRecipe, demandSecondsLeft } from "../core/economy";
 import type { ZoneId } from "../content/types";
 
 const TICK = 1 / 30;
@@ -43,6 +45,7 @@ const SAVE_PERIOD_MS = 15000;
 export interface GameHooks {
   toast(text: string, kind?: "info" | "good" | "warn"): void;
   zoneChanged(zone: ZoneId): void;
+  openContracts(): void;
   offlineSummary(seconds: number, coins: number, onCollect: (doubled: boolean) => void): void;
   sunriseTransition(): void;
   structureChanged(): void;
@@ -80,6 +83,7 @@ export class Game {
     treeShake: [],
     helperWorking: {},
     cartTimer: 0,
+    squeezeMeter: 0,
   };
 
   constructor(
@@ -236,6 +240,7 @@ export class Game {
     x.treeShake = x.treeShake.map((v) => Math.max(0, v - dt * 3));
     for (const k of Object.keys(x.helperWorking) as HelperId[]) x.helperWorking[k] = Math.max(0, (x.helperWorking[k] ?? 0) - dt);
     x.cartTimer = Math.max(0, x.cartTimer - dt * 0.8);
+    x.squeezeMeter = squeezeMeter(this.s);
     const nr = nextRegion(this.g);
     x.nextRegion = nr;
     x.nextRegionCost = nr ? regionCost(nr) : undefined;
@@ -266,6 +271,13 @@ export class Game {
       this.sessionMarks.add("10");
       this.analytics.track("session_10min");
     }
+    // Order Board
+    if (expireContract(this.g, now)) {
+      this.hooks.toast(t("ui.contract.expired"), "info");
+      this.analytics.track("contract_expired");
+      this.requestSave();
+    }
+    if (refreshOffers(this.g, this.stats, this.rng, now)) this.hooks.structureChanged();
     // Saving
     if ((this.saveDueAt && now >= this.saveDueAt) || now - this.lastSave > SAVE_PERIOD_MS) this.saveNow();
     // Earnings log trim
@@ -322,11 +334,15 @@ export class Game {
         break;
       case "squeeze":
         this.extras.pressSquash = 1;
-        this.audio.play("squeeze");
+        this.audio.play(e.perfect ? "sparkle" : "squeeze");
+        if (e.perfect) {
+          r.floatText(LAYOUT.press.x, GROUND_Y - 215, t("ui.perfect"), C.coral, 26);
+          r.sparkle(LAYOUT.press.x, GROUND_Y - 150, 8);
+        }
         break;
       case "sale": {
         const p = r.customerWorldPos(this.s, e.uid);
-        r.floatText(p.x, p.y - 40, `+${formatNumber(e.amount)}`, e.premium ? C.coral : C.cocoa, e.tip > 0 ? 24 : 20);
+        r.floatText(p.x, p.y - 40, `${e.perfect ? "★ " : ""}+${formatNumber(e.amount)}`, e.premium || e.perfect ? C.coral : C.cocoa, e.tip > 0 || e.perfect ? 24 : 20);
         if (e.by === "helper") this.extras.helperWorking.roo = 0.5;
         this.audio.play("coin");
         if (e.done) noteCombo(this.g, e.combo);
@@ -413,7 +429,7 @@ export class Game {
   }
 
   squeeze(): void {
-    if (!squeeze(this.g, this.ctx())) {
+    if (!squeeze(this.g, this.s, this.ctx())) {
       this.audio.play("deny");
       const recipeLemons = this.g.drinks >= slotsOf(this.stats.counterCap) ? "Counter full!" : "Need lemons";
       this.renderer.floatText(LAYOUT.press.x, GROUND_Y - 170, recipeLemons, C.coral, 16);
@@ -482,6 +498,7 @@ export class Game {
     const spot = FACILITY_SPOTS[id as FacilitySpotId] ?? { x: LAYOUT.stand.x, y: GROUND_Y };
     if (lv > 0 && id !== "grove_plot") {
       if (id === "sell_crate") return void this.sell();
+      if (id === "order_board") return void this.hooks.openContracts();
       if (id === "lucky_wheel") return void this.spin();
       this.renderer.floatText(spot.x, spot.y - 200, `${nameOf("upgrade", id)} · ${t("ui.level", { n: lv })}`, C.cocoa, 18);
       return;
@@ -498,6 +515,76 @@ export class Game {
       return;
     }
     if (this.buyUpgrade(id)) this.hooks.toast(t("ui.toast.built", { ref: nameOf("upgrade", id) }), "good");
+  }
+
+  // -------------------------------------------------------------------------
+  // Order Board
+
+  acceptContract(index: number): boolean {
+    if (!acceptContract(this.g, index, Date.now())) {
+      this.audio.play("deny");
+      return false;
+    }
+    const a = this.g.contract.active!;
+    this.audio.play("unlock");
+    this.hooks.toast(t("ui.contract.accepted", { n: a.count, ref: nameOf("recipe", a.recipe) }), "good");
+    if (this.g.activeRecipe !== a.recipe && this.g.recipes.includes(a.recipe)) this.useRecipe(a.recipe);
+    this.requestSave(true);
+    this.hooks.structureChanged();
+    return true;
+  }
+
+  deliverContract(): void {
+    const res = deliverContract(this.g, Date.now());
+    if (!res.ok) {
+      this.audio.play("deny");
+      const a = this.g.contract.active;
+      if (res.reason === "wrongRecipe" && a) this.hooks.toast(t("ui.contract.switch", { ref: nameOf("recipe", a.recipe) }), "info");
+      else if (res.reason === "noDrinks") this.hooks.toast(t("ui.contract.noDrinks"), "info");
+      return;
+    }
+    const board = FACILITY_SPOTS.order_board;
+    this.renderer.floatText(LAYOUT.stand.x, GROUND_Y - 150, t("ui.contract.sent", { n: res.delivered }), C.cocoa, 18);
+    if (res.completed) {
+      this.hooks.toast(t("ui.contract.done", { n: formatNumber(res.reward) }), "good");
+      this.renderer.floatText(board.x, board.y - 240, `+${formatNumber(res.reward)}`, C.cocoa, 28);
+      this.renderer.sparkle(LAYOUT.stand.x, GROUND_Y - 200, 12);
+      this.audio.play("unlock");
+      this.logEarn(res.reward);
+      this.analytics.track("contract_complete", { streak: this.g.contract.streak });
+      this.platform.happytime();
+    } else {
+      this.audio.play("drink");
+    }
+    this.requestSave(true);
+    this.hooks.structureChanged();
+  }
+
+  abandonContract(): void {
+    if (expireContract(this.g, Date.now(), true)) {
+      this.audio.play("soft");
+      this.requestSave(true);
+      this.hooks.structureChanged();
+    }
+  }
+
+  contractSecondsLeft(): number {
+    return contractSecondsLeft(this.g, Date.now());
+  }
+
+  canDeliver(): boolean {
+    const a = this.g.contract.active;
+    return !!a && this.g.activeRecipe === a.recipe && this.g.drinks > 0;
+  }
+
+  demand(): { recipe: RecipeId; secondsLeft: number; active: boolean } | null {
+    const now = Date.now();
+    const d = demandRecipe(this.g, now);
+    return d ? { recipe: d.id, secondsLeft: demandSecondsLeft(now), active: d.id === this.g.activeRecipe } : null;
+  }
+
+  squeezeMeter(): number {
+    return squeezeMeter(this.s);
   }
 
   canSell(): boolean {

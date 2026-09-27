@@ -1,9 +1,9 @@
 // Zone backdrops and facility buildings for the explorable lane (Grove, Market, Fair).
 // Same rules as draw.ts: palette colors, cocoa outlines, soft shadows, anchor = bottom-center.
 import type { RecipeDef, WheelSegment } from "../content/types";
-import { GROUND_Y } from "../core/layout";
+import { GROUND_Y, estimateTextWidth, type Rect } from "../core/layout";
 import { drawDrink, drawLemon, ellipse, fillStroke, groundShadow, label, rrPath, star, drawCloud } from "./draw";
-import { C, FONT } from "./palette";
+import { C } from "./palette";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -12,16 +12,16 @@ type Ctx = CanvasRenderingContext2D;
 
 export type BuildState = "affordable" | "saving" | "locked";
 
-export function drawConstruction(ctx: Ctx, x: number, y: number, w: number, h: number, title: string, line2: string, state: BuildState, time: number, motion: boolean): void {
+export function drawConstruction(ctx: Ctx, x: number, y: number, w: number, h: number, sign: Rect, title: string, line2: string, state: BuildState, time: number, motion: boolean): void {
   const pulse = state === "affordable" && motion ? 0.5 + 0.5 * Math.sin(time * 4) : 0;
   // Ghost footprint
   ctx.save();
   rrPath(ctx, x - w / 2, y - h, w, h, 18);
-  ctx.fillStyle = state === "locked" ? "rgba(255,244,214,0.28)" : `rgba(255,244,214,${0.45 + pulse * 0.2})`;
+  ctx.fillStyle = state === "locked" ? "rgba(255,244,214,0.22)" : `rgba(255,244,214,${0.4 + pulse * 0.2})`;
   ctx.fill();
   ctx.setLineDash([10, 8]);
   ctx.lineWidth = 3;
-  ctx.strokeStyle = state === "affordable" ? C.leaf : "rgba(90,70,56,0.55)";
+  ctx.strokeStyle = state === "affordable" ? C.leaf : "rgba(90,70,56,0.45)";
   ctx.stroke();
   ctx.restore();
   // Caution tape along the bottom
@@ -40,29 +40,28 @@ export function drawConstruction(ctx: Ctx, x: number, y: number, w: number, h: n
     ctx.fill();
   }
   ctx.restore();
-  // Sign
-  ctx.font = `700 16px ${FONT}`;
-  const tw = ctx.measureText(title).width;
-  ctx.font = `700 13px ${FONT}`;
-  const lw = ctx.measureText(line2).width;
-  const sw = Math.max(130, tw + 30, lw + 50);
-  const sy = y - Math.min(h * 0.62, 190);
-  rrPath(ctx, x - 4, sy + 40, 8, y - 20 - (sy + 40), 3);
-  fillStroke(ctx, C.woodDark, 2.5);
-  const lift = pulse * 4;
-  rrPath(ctx, x - sw / 2, sy - lift, sw, 58, 12);
+  // Sign on a post (rect comes from layout so it's the same one the overlap tests check)
+  const lift = pulse * 3;
+  const postTop = sign.y + sign.h - 4;
+  if (y - 20 > postTop) {
+    rrPath(ctx, x - 4, postTop, 8, y - 20 - postTop, 3);
+    fillStroke(ctx, C.woodDark, 2.5);
+  }
+  rrPath(ctx, sign.x, sign.y - lift, sign.w, sign.h, 12);
   fillStroke(ctx, state === "locked" ? "#EFE3C6" : C.wood, 3);
-  label(ctx, title, x, sy + 17 - lift, 16, C.cocoa);
-  rrPath(ctx, x - sw / 2 + 12, sy + 30 - lift, sw - 24, 22, 11);
+  label(ctx, title, x, sign.y + 17 - lift, 16, C.cocoa);
+  rrPath(ctx, sign.x + 10, sign.y + 30 - lift, sign.w - 20, 22, 11);
   fillStroke(ctx, state === "affordable" ? C.leaf : state === "locked" ? C.cream : C.white, 2);
-  label(ctx, line2, x, sy + 41.5 - lift, 13, C.cocoa);
+  label(ctx, line2, x + (state === "locked" ? 8 : 0), sign.y + 41.5 - lift, 13, C.cocoa);
   if (state === "locked") {
-    // Padlock
-    rrPath(ctx, x + sw / 2 - 20, sy - 14 - lift, 22, 18, 4);
-    fillStroke(ctx, C.gold, 2);
+    // Small padlock inside the pill, left of the text
+    const lx = x - estimateTextWidth(line2, 13) / 2 - 6;
+    const ly = sign.y + 41 - lift;
+    rrPath(ctx, lx - 6, ly - 3, 12, 9, 2);
+    fillStroke(ctx, C.gold, 1.5);
     ctx.beginPath();
-    ctx.arc(x + sw / 2 - 9, sy - 14 - lift, 6, Math.PI, 0);
-    ctx.lineWidth = 3;
+    ctx.arc(lx, ly - 3, 3.6, Math.PI, 0);
+    ctx.lineWidth = 1.8;
     ctx.strokeStyle = C.cocoa;
     ctx.stroke();
   }
@@ -198,31 +197,31 @@ export function drawSprinkler(ctx: Ctx, x: number, y: number, level: number, tim
 // Market Square
 
 export function drawMarketBackdrop(ctx: Ctx, time: number, motion: boolean): void {
-  const shops: [number, string, string, string][] = [
-    [1300, C.cream, C.coral, "BAKERY"],
-    [1640, C.white, C.leaf, "FLOWERS"],
-    [2190, "#FFF1B8", C.skyDeep, "TOYS"],
+  // Distant shop fronts: faded and text-free so the facilities in front always read clearly.
+  const shops: [number, string, string][] = [
+    [1245, C.cream, C.coral],
+    [1690, C.white, C.leaf],
+    [2110, "#FFF1B8", C.skyDeep],
+    [2345, C.cream, C.coral],
   ];
-  for (const [sx, wall, roof, name] of shops) {
-    rrPath(ctx, sx - 95, GROUND_Y - 190, 190, 150, 8);
+  ctx.save();
+  ctx.globalAlpha = 0.45;
+  for (const [sx, wall, roof] of shops) {
+    rrPath(ctx, sx - 70, GROUND_Y - 150, 140, 112, 8);
     fillStroke(ctx, wall, 3);
     ctx.beginPath();
-    ctx.moveTo(sx - 105, GROUND_Y - 188);
-    ctx.lineTo(sx - 80, GROUND_Y - 230);
-    ctx.lineTo(sx + 80, GROUND_Y - 230);
-    ctx.lineTo(sx + 105, GROUND_Y - 188);
+    ctx.moveTo(sx - 80, GROUND_Y - 148);
+    ctx.lineTo(sx - 60, GROUND_Y - 182);
+    ctx.lineTo(sx + 60, GROUND_Y - 182);
+    ctx.lineTo(sx + 80, GROUND_Y - 148);
     ctx.closePath();
     fillStroke(ctx, roof, 3);
-    rrPath(ctx, sx - 60, GROUND_Y - 175, 120, 26, 8);
-    fillStroke(ctx, C.white, 2.5);
-    label(ctx, name, sx, GROUND_Y - 162, 15, C.cocoa);
-    for (const wx of [-55, 25]) {
-      rrPath(ctx, sx + wx, GROUND_Y - 138, 30, 36, 5);
+    for (const wx of [-48, 18]) {
+      rrPath(ctx, sx + wx, GROUND_Y - 124, 30, 30, 5);
       fillStroke(ctx, C.sky, 2.5);
     }
-    rrPath(ctx, sx - 14, GROUND_Y - 100, 28, 60, 5);
-    fillStroke(ctx, C.woodDark, 2.5);
   }
+  ctx.restore();
   // Cobblestone plaza
   ctx.fillStyle = "#EAD6A8";
   ctx.fillRect(1200, GROUND_Y - 38, 1200, 46);
@@ -262,14 +261,14 @@ export function drawBunting(ctx: Ctx, x0: number, x1: number, y: number, time: n
 
 export function drawSellCrate(ctx: Ctx, x: number, y: number, level: number, lemons: number, priceText: string, time: number, motion: boolean): void {
   groundShadow(ctx, x, y, 200);
-  // Sign post
-  rrPath(ctx, x + 74, y - 200, 10, 200, 4);
+  // Sign post behind the crate, board above the lemon pile
+  rrPath(ctx, x - 5, y - 214, 10, 110, 4);
   fillStroke(ctx, C.woodDark, 3);
   const bob = motion ? Math.sin(time * 2.5) * 2 : 0;
-  rrPath(ctx, x + 22, y - 232 + bob, 116, 50, 12);
+  rrPath(ctx, x - 62, y - 274 + bob, 124, 52, 12);
   fillStroke(ctx, level >= 10 ? C.gold : C.lemon, 3);
-  label(ctx, "SELL", x + 80, y - 214 + bob, 22, C.cocoa);
-  label(ctx, priceText, x + 80, y - 193 + bob, 12, C.cocoa);
+  label(ctx, "SELL", x, y - 256 + bob, 22, C.cocoa);
+  label(ctx, priceText, x, y - 234 + bob, 12, C.cocoa);
   // Crate body
   rrPath(ctx, x - 90, y - 110, 180, 110, 10);
   fillStroke(ctx, C.wood, 3);
@@ -417,36 +416,8 @@ export function drawFactory(ctx: Ctx, x: number, y: number, level: number, runni
 // Lemon Fair
 
 export function drawFairBackdrop(ctx: Ctx, time: number, motion: boolean): void {
-  // Ferris wheel silhouette
-  const fx = 3180;
-  const fy = GROUND_Y - 260;
-  ctx.save();
-  ctx.globalAlpha = 0.55;
-  ctx.strokeStyle = "#E9C39E";
-  ctx.lineWidth = 6;
-  ellipse(ctx, fx, fy, 150, 150);
-  ctx.stroke();
-  const rot = motion ? time * 0.15 : 0;
-  for (let i = 0; i < 10; i++) {
-    const a = rot + (i / 10) * Math.PI * 2;
-    ctx.beginPath();
-    ctx.moveTo(fx, fy);
-    ctx.lineTo(fx + Math.cos(a) * 150, fy + Math.sin(a) * 150);
-    ctx.lineWidth = 3;
-    ctx.stroke();
-    rrPath(ctx, fx + Math.cos(a) * 150 - 12, fy + Math.sin(a) * 150, 24, 18, 5);
-    ctx.fillStyle = [C.coral, C.lemon, C.leaf, C.sky][i % 4];
-    ctx.fill();
-  }
-  ctx.beginPath();
-  ctx.moveTo(fx - 90, GROUND_Y - 40);
-  ctx.lineTo(fx, fy);
-  ctx.lineTo(fx + 90, GROUND_Y - 40);
-  ctx.lineWidth = 8;
-  ctx.stroke();
-  ctx.restore();
   // Striped tents
-  for (const [tx, c1] of [[2470, C.coral], [3520, C.skyDeep]] as const) {
+  for (const [tx, c1] of [[2440, C.coral], [3525, C.skyDeep]] as const) {
     const tw = 150;
     for (let i = 0; i < 6; i++) {
       ctx.beginPath();
@@ -662,3 +633,93 @@ export function drawStatue(ctx: Ctx, x: number, y: number, level: number, time: 
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// Order Board (Market Square)
+
+export interface BoardNote {
+  recipe: RecipeDef;
+  label: string;
+  progress?: number;
+}
+
+export function drawOrderBoard(ctx: Ctx, x: number, y: number, level: number, notes: BoardNote[], active: boolean, time: number, motion: boolean): void {
+  groundShadow(ctx, x, y, 180);
+  // Posts
+  for (const px of [-64, 56]) {
+    rrPath(ctx, x + px, y - 190, 10, 190, 4);
+    fillStroke(ctx, C.woodDark, 3);
+  }
+  // Little roof
+  ctx.beginPath();
+  ctx.moveTo(x - 86, y - 188);
+  ctx.lineTo(x, y - 226);
+  ctx.lineTo(x + 86, y - 188);
+  ctx.closePath();
+  fillStroke(ctx, level >= 5 ? C.gold : C.coral, 3);
+  // Cork board
+  rrPath(ctx, x - 76, y - 186, 152, 118, 8);
+  fillStroke(ctx, "#D9A066", 3);
+  rrPath(ctx, x - 68, y - 178, 136, 102, 6);
+  ctx.fillStyle = "#E8C08A";
+  ctx.fill();
+  label(ctx, "ORDERS", x, y - 58, 15, C.cocoa);
+  // Notes
+  const n = Math.max(1, notes.length);
+  notes.forEach((note, i) => {
+    const w = active ? 120 : 40;
+    const nx = active ? x : x - 46 + i * 46;
+    const wobble = motion ? Math.sin(time * 2 + i) * 0.04 : 0;
+    ctx.save();
+    ctx.translate(nx, y - 128);
+    ctx.rotate(wobble + (active ? 0 : (i - (n - 1) / 2) * 0.06));
+    rrPath(ctx, -w / 2, -42, w, 84, 4);
+    fillStroke(ctx, C.white, 2);
+    ellipse(ctx, 0, -40, 4, 4);
+    fillStroke(ctx, C.coral, 1.5);
+    drawDrink(ctx, active ? -34 : 0, active ? 18 : 10, note.recipe, active ? 1 : 0.8);
+    label(ctx, note.label, active ? 18 : 0, active ? -14 : 28, active ? 14 : 11, C.cocoa);
+    if (note.progress !== undefined) {
+      rrPath(ctx, -8, 8, 60, 10, 5);
+      fillStroke(ctx, C.cream, 1.5);
+      rrPath(ctx, -8, 8, Math.max(4, 60 * note.progress), 10, 5);
+      ctx.fillStyle = C.leaf;
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+}
+
+/** Perfect Squeeze gauge: a half dial with a golden sweet spot and a sweeping needle. */
+export function drawSqueezeGauge(ctx: Ctx, x: number, y: number, meter: number, perfectWindow: number): void {
+  const r = 30;
+  ctx.beginPath();
+  ctx.arc(x, y, r + 6, Math.PI, 0);
+  ctx.closePath();
+  fillStroke(ctx, C.white, 2.5);
+  ctx.lineCap = "butt";
+  ctx.beginPath();
+  ctx.arc(x, y, r - 2, Math.PI, Math.PI * (2 - perfectWindow));
+  ctx.lineWidth = 8;
+  ctx.strokeStyle = "#E9D3BC";
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y, r - 2, Math.PI * (2 - perfectWindow), Math.PI * 2);
+  ctx.strokeStyle = C.gold;
+  ctx.stroke();
+  ctx.lineCap = "round";
+  const a = Math.PI + meter * Math.PI;
+  ctx.beginPath();
+  ctx.moveTo(x, y);
+  ctx.lineTo(x + Math.cos(a) * (r - 4), y + Math.sin(a) * (r - 4));
+  ctx.lineWidth = 3.5;
+  ctx.strokeStyle = C.cocoa;
+  ctx.stroke();
+  ellipse(ctx, x, y, 4, 4);
+  fillStroke(ctx, C.coral, 1.5);
+  if (meter >= 1 - perfectWindow) {
+    star(ctx, x + r + 4, y - r, 6, 4, 0.4);
+    ctx.fillStyle = C.gold;
+    ctx.fill();
+  }
+}

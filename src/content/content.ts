@@ -1,5 +1,6 @@
 // ContentRegistry: all balancing and content numbers live here, never in rendering code.
 import type {
+  ContractTier,
   CosmeticDef,
   WheelSegment,
   ZoneDef,
@@ -50,6 +51,7 @@ export const STAT_BASE: Record<StatId, number> = {
   autoSell: 0,
   passiveIncome: 0,
   wheelCooldown: 660,
+  contractBonus: 0,
 };
 
 /** Soft limits keep multiplicative systems from running away. */
@@ -118,6 +120,20 @@ export const TUNING = {
   wheelBigCoinSeconds: 300,
   wheelMinCoins: 40,
   wheelRushSeconds: 45,
+  /** Perfect Squeeze: the gauge sweeps at this speed (rad/s); the top slice of the sweep is "perfect". */
+  meterSpeed: 1.7,
+  perfectWindow: 0.16,
+  perfectBoost: 0.6,
+  /** Extra value for a Perfect drink. */
+  perfectBonus: 0.5,
+  /** Market Demand: one recipe is "hot" for this many minutes, worth this much more. */
+  demandMinutes: 4,
+  demandBonus: 0.5,
+  /** Order Board: new offers after finishing/expiring, offer rotation, streak bonus per success. */
+  contractCooldownSeconds: 20,
+  contractRotateMinutes: 10,
+  contractStreakStep: 0.1,
+  contractStreakMax: 5,
 };
 
 export const UPGRADES: UpgradeDef[] = [
@@ -167,6 +183,8 @@ export const UPGRADES: UpgradeDef[] = [
     effects: [{ stat: "wheelCooldown", add: -60 }] },
   { id: "fountain", zone: "fair", region: "sunny_lane", baseCost: 1500, growth: 1.6, maxLevel: 25, sort: 41,
     effects: [{ stat: "passiveIncome", add: 2 }] },
+  { id: "order_board", zone: "market", region: "tiny_yard", baseCost: 350, growth: 2.1, maxLevel: 10, sort: 33,
+    effects: [{ stat: "contractBonus", add: 0.15 }] },
   { id: "golden_statue", zone: "fair", region: "market_row", baseCost: 40000, growth: 2, maxLevel: 10, sort: 42,
     effects: [{ stat: "incomeMult", pct: 0.12 }] },
 ];
@@ -179,7 +197,14 @@ export const ZONES: ZoneDef[] = [
 ];
 
 /** Upgrades that only exist as a building once bought (level 0 shows a construction outline). */
-export const FACILITY_IDS: UpgradeId[] = ["sprinkler", "beehive", "sell_crate", "lemon_chute", "juice_factory", "lucky_wheel", "fountain", "golden_statue"];
+export const FACILITY_IDS: UpgradeId[] = ["sprinkler", "beehive", "sell_crate", "lemon_chute", "juice_factory", "order_board", "lucky_wheel", "fountain", "golden_statue"];
+
+/** Order Board contract tiers: easy, medium, big. */
+export const CONTRACT_TIERS: ContractTier[] = [
+  { count: [6, 10], seconds: 180, mult: 2.2 },
+  { count: [14, 22], seconds: 300, mult: 2.8 },
+  { count: [30, 45], seconds: 480, mult: 3.6 },
+];
 
 export const WHEEL: WheelSegment[] = [
   { kind: "coins", weight: 3, color: "#FFD95A" },
@@ -296,11 +321,14 @@ export const QUESTS: QuestDef[] = [
   { id: "q_hire_pip", kind: "hire", ref: "pip", target: 1, reward: 25 },
   { id: "q_build_crate", kind: "upgradeLevel", ref: "sell_crate", target: 1, reward: 30 },
   { id: "q_sell_20", kind: "sell", target: 20, reward: 40 },
+  { id: "q_perfect_3", kind: "perfect", target: 3, reward: 50 },
   { id: "q_serve_10", kind: "serve", target: 10, reward: 40 },
   { id: "q_tree_3", kind: "upgradeLevel", ref: "lemon_tree", target: 3, reward: 60 },
   { id: "q_wheel", kind: "upgradeLevel", ref: "lucky_wheel", target: 1, reward: 80 },
   { id: "q_spin", kind: "spin", target: 1, reward: 60 },
   { id: "q_plot", kind: "upgradeLevel", ref: "grove_plot", target: 1, reward: 120 },
+  { id: "q_board", kind: "upgradeLevel", ref: "order_board", target: 1, reward: 150 },
+  { id: "q_contract_1", kind: "contract", target: 1, reward: 300 },
   { id: "q_sunny_lane", kind: "region", ref: "sunny_lane", target: 1, reward: 100 },
   { id: "q_hire_roo", kind: "hire", ref: "roo", target: 1, reward: 150 },
   { id: "q_honey", kind: "recipe", ref: "honey_lemon", target: 1, reward: 200 },
@@ -335,6 +363,14 @@ export const QUEST_IDS_V1 = [
   "q_first_pick", "q_first_serve", "q_first_upgrade", "q_hire_pip", "q_serve_10", "q_tree_3", "q_sunny_lane", "q_hire_roo",
   "q_honey", "q_combo_5", "q_golden", "q_earn_5k", "q_picnic", "q_press_10", "q_mint", "q_hire_basil", "q_serve_250",
   "q_market", "q_combo_15", "q_earn_250k", "q_orchard", "q_sunrise",
+];
+
+/** Authored goal IDs as shipped in save schema 2, used to remap goal progress in migration 2 → 3. */
+export const QUEST_IDS_V2 = [
+  "q_first_pick", "q_first_serve", "q_first_upgrade", "q_hire_pip", "q_build_crate", "q_sell_20", "q_serve_10", "q_tree_3",
+  "q_wheel", "q_spin", "q_plot", "q_sunny_lane", "q_hire_roo", "q_honey", "q_fountain", "q_combo_5", "q_golden", "q_earn_5k",
+  "q_picnic", "q_press_10", "q_mint", "q_hire_basil", "q_factory", "q_serve_250", "q_market", "q_combo_15", "q_earn_250k",
+  "q_orchard", "q_sunrise",
 ];
 
 export const upgradeById = new Map(UPGRADES.map((u) => [u.id, u]));

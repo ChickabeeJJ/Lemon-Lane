@@ -3,6 +3,7 @@ import {
   CUSTOMERS,
   HELPERS,
   PERKS,
+  RECIPES,
   RECIPE_TRAIT_BONUS,
   REGIONS,
   STAT_BASE,
@@ -93,9 +94,44 @@ export function totalTrees(s: StatBlock): number {
   return slotsOf(s.treeCount) + slotsOf(s.grovePlots);
 }
 
+// ---------------------------------------------------------------------------
+// Market Demand: one usable recipe is "hot" for a few minutes at a time.
+
+function hashSlot(n: number): number {
+  let h = (n ^ 0x9e3779b9) >>> 0;
+  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b) >>> 0;
+  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35) >>> 0;
+  return (h ^ (h >>> 16)) >>> 0;
+}
+
+/** Recipes whose lane spot is open (discovered or not): the pool Market Demand picks from. */
+function demandPool(g: GameState): RecipeDef[] {
+  return RECIPES.filter((r) => g.regions.includes(r.region) && g.sunrises >= r.sunrises).sort((a, b) => a.sort - b.sort);
+}
+
+/** The recipe in demand right now, or null when there's nothing to choose between (or no clock). */
+export function demandRecipe(g: GameState, now: number): RecipeDef | null {
+  if (!(now > 0)) return null;
+  const pool = demandPool(g);
+  if (pool.length < 2) return null;
+  const slot = Math.floor(now / (TUNING.demandMinutes * 60_000));
+  return pool[hashSlot(slot) % pool.length];
+}
+
+/** Seconds until demand rotates. */
+export function demandSecondsLeft(now: number): number {
+  const period = TUNING.demandMinutes * 60_000;
+  return Math.max(0, (period - (now % period)) / 1000);
+}
+
+export function demandMultiplier(g: GameState, now: number): number {
+  const d = demandRecipe(g, now);
+  return d && d.id === g.activeRecipe ? 1 + TUNING.demandBonus : 1;
+}
+
 /** Coins for one standard drink of the active recipe (no customer/premium/combo modifiers). */
 export function baseDrinkValue(g: GameState, s: StatBlock, now: number): number {
-  return activeRecipe(g).value * incomeMultiplier(g, s, now);
+  return activeRecipe(g).value * incomeMultiplier(g, s, now) * demandMultiplier(g, now);
 }
 
 // ---------------------------------------------------------------------------

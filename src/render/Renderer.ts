@@ -1,9 +1,11 @@
 // Renderer: composes the lane scene each frame from game state. Read-only with respect to state.
-import { COSMETICS, FACILITY_IDS, WHEEL, customerById, helperById, recipeById, upgradeById } from "../content/content";
+import { COSMETICS, FACILITY_IDS, TUNING, WHEEL, customerById, helperById, recipeById, upgradeById } from "../content/content";
 import type { HelperId, RegionId, UpgradeId } from "../content/types";
 import { upgradeLocked } from "../core/actions";
 import { activeRecipe, rawLemonValue, slotsOf, upgradeCost, type StatBlock } from "../core/economy";
-import { FACILITY_SPOTS, GROUND_Y, GROVE_TREES, LAYOUT, WORLD_H, WORLD_W, treeSpot, zoneLeft, type FacilitySpotId } from "../core/layout";
+import { FACILITY_SPOTS, GROUND_Y, GROVE_TREES, LAYOUT, WORLD_H, WORLD_W, constructionSignRect, grovePlotSpot, treeSpot, zoneLeft, type FacilitySpot, type FacilitySpotId } from "../core/layout";
+import { CUSTOMER_TOP } from "./critters";
+import { constructionText } from "./labels";
 import { spinCooldownLeft } from "../core/wheel";
 import { HOME_TREE_SLOTS } from "../core/state";
 import {
@@ -16,6 +18,8 @@ import {
   drawFountain,
   drawGroveBackdrop,
   drawMarketBackdrop,
+  drawOrderBoard,
+  drawSqueezeGauge,
   drawSellCrate,
   drawSprinkler,
   drawStatue,
@@ -86,23 +90,14 @@ const HELPER_SPOTS: Record<HelperId, { x: number; y: number; behindCounter?: boo
   roo: { x: 798, y: GROUND_Y + 30 },
   basil: { x: 395, y: GROUND_Y + 50 },
   peony: { x: 470, y: GROUND_Y + 86 },
-  mochi: { x: 585, y: GROUND_Y - 92, behindCounter: true },
+  mochi: { x: 595, y: GROUND_Y - 92, behindCounter: true },
   coco: { x: 190, y: GROUND_Y + 82 },
   nori: { x: 300, y: GROUND_Y + 88 },
-  sunny: { x: 700, y: GROUND_Y - 92, behindCounter: true },
+  sunny: { x: 710, y: GROUND_Y - 92, behindCounter: true },
 };
 
-/** Where the next locked region previews itself with a signpost. */
-const REGION_SIGN: Record<RegionId, { x: number; y: number }> = {
-  tiny_yard: { x: 0, y: 0 },
-  sunny_lane: { x: 62, y: GROUND_Y + 66 },
-  picnic_corner: { x: 1150, y: GROUND_Y - 34 },
-  market_row: { x: 960, y: GROUND_Y - 70 },
-  orchard_hill: { x: 60, y: GROUND_Y + 66 },
-  riverside: { x: 1120, y: GROUND_Y - 100 },
-  sunset_plaza: { x: 870, y: GROUND_Y - 60 },
-  moonlit_market: { x: 1150, y: GROUND_Y - 60 },
-};
+/** The next lane spot previews itself with one signpost in a clear spot at the front-left of the stand zone. */
+const REGION_SIGN = { x: 60, y: GROUND_Y + 92 };
 
 export interface ViewExtras {
   now: number;
@@ -113,6 +108,7 @@ export interface ViewExtras {
   treeShake: number[];
   helperWorking: Partial<Record<HelperId, number>>;
   cartTimer: number;
+  squeezeMeter: number;
 }
 
 export class Renderer {
@@ -194,7 +190,7 @@ export class Renderer {
     }
     const nextPlot = slotsOf(this.lastStats?.grovePlots ?? 0);
     const plot = GROVE_TREES[nextPlot];
-    if (plot && (g.upgrades.grove_plot ?? 0) < (upgradeById.get("grove_plot")?.maxLevel ?? 0) && Math.abs(x - plot.x) < 70 && y > plot.y - 170 && y < plot.y + 20) {
+    if (plot && (g.upgrades.grove_plot ?? 0) < (upgradeById.get("grove_plot")?.maxLevel ?? 0) && Math.abs(x - plot.x) < 75 && y > plot.y - 190 && y < plot.y + 20) {
       return { kind: "facility", id: "grove_plot" };
     }
     // Press
@@ -218,14 +214,14 @@ export class Renderer {
 
   fruitWorldPos(g: GameState, tree: number, fruit: number): { x: number; y: number } {
     const tr = treeSpot(tree);
-    const s = tr.scale * this.treeScale(g);
+    const s = tr.scale * (tree < HOME_TREE_SLOTS ? this.treeScale(g) : 1);
     const [fx, fy] = FRUIT_SPOTS[fruit % FRUIT_SPOTS.length];
     return { x: tr.x + fx * s, y: tr.y + fy * s };
   }
 
   customerWorldPos(s: SessionState, uid: number): { x: number; y: number } {
     const c = s.customers.find((c) => c.uid === uid);
-    return { x: c?.x ?? LAYOUT.queueFrontX, y: LAYOUT.customerY - 90 };
+    return { x: c?.x ?? LAYOUT.queueFrontX, y: LAYOUT.customerY - (c ? CUSTOMER_TOP[c.type] : 90) * CUSTOMER_SCALE * 0.95 };
   }
 
   private treeScale(g: GameState): number {
@@ -446,6 +442,7 @@ export class Renderer {
     drawBasket(ctx, LAYOUT.basket.x, LAYOUT.basket.y - 40, g.upgrades.basket ?? 0, g.lemons, slotsOf(stats.basketCap));
     const running = g.lemons >= recipe.lemons && g.drinks < slotsOf(stats.counterCap);
     drawPress(ctx, LAYOUT.press.x, LAYOUT.press.y, g.upgrades.juice_press ?? 0, g.pressProgress, running, time, recipe, x.pressSquash, g.lemons > 0, motion);
+    if (running) drawSqueezeGauge(ctx, LAYOUT.press.x, GROUND_Y - 168, x.squeezeMeter, TUNING.perfectWindow);
 
     // Umbrella behind the queue
     const umb = g.upgrades.sun_umbrella ?? 0;
@@ -476,7 +473,14 @@ export class Renderer {
     const gap = shownSlots > 1 ? (right - left) / (shownSlots - 1) : 0;
     for (let i = 0; i < shownSlots; i++) {
       const dx = shownSlots > 1 ? left + gap * i : st.x;
-      if (i < g.drinks) drawDrink(ctx, dx, st.y - 108, recipe, 0.95);
+      if (i < g.drinks) {
+        drawDrink(ctx, dx, st.y - 108, recipe, 0.95);
+        // Perfect drinks (served first) wear a gold star.
+        if (i >= g.drinks - g.perfectDrinks) {
+          star(ctx, dx + 9, st.y - 138, 6, 5, 0.45);
+          fillStroke(ctx, C.gold, 1.5);
+        }
+      }
       else {
         ctx.fillStyle = "rgba(90,70,56,0.12)";
         ellipse(ctx, dx, st.y - 110, 8, 3);
@@ -493,13 +497,13 @@ export class Renderer {
     const ice = g.upgrades.ice_box ?? 0;
     if (ice > 0) {
       ctx.save();
-      ctx.translate(560, GROUND_Y + 62);
+      ctx.translate(556, GROUND_Y + 62);
       ctx.scale(0.8, 0.8);
       drawIceBox(ctx, 0, 0, ice);
       ctx.restore();
     }
     const pots = Math.min(6, g.upgrades.flower_pots ?? 0);
-    for (let i = 0; i < pots; i++) drawFlowerPot(ctx, 640 + i * 30, GROUND_Y + 78, i, time, motion);
+    for (let i = 0; i < pots; i++) drawFlowerPot(ctx, 662 + i * 30, GROUND_Y + 78, i, time, motion);
 
     // Delivery cart
     const cartLv = g.upgrades.delivery_cart ?? 0;
@@ -518,16 +522,17 @@ export class Renderer {
       const def = customerById.get(c.type)!;
       const walking = c.phase === "arriving" || c.phase === "leaving";
       drawCustomer(ctx, c.x, LAYOUT.customerY, def, c.mood, c.t + c.uid, walking, motion, CUSTOMER_SCALE, c.uid);
-      if (c.phase === "waiting") this.drawOrderBubble(c.x, LAYOUT.customerY - 128, c.owed, c.patience / c.patienceMax, c.premium, recipe.id);
+      const top = LAYOUT.customerY - CUSTOMER_TOP[c.type] * CUSTOMER_SCALE * 0.95;
+      if (c.phase === "waiting") this.drawOrderBubble(c.x, top - 34, c.owed, c.patience / c.patienceMax, c.premium, recipe.id);
       if (c.phase === "served" || (c.phase === "leaving" && c.mood !== "sad" && c.t < 0.8)) {
         const rise = motion ? c.t * 20 : 0;
-        if (c.mood === "delighted") this.heart(c.x, LAYOUT.customerY - 110 - rise);
-        else label(ctx, "♪", c.x + 16, LAYOUT.customerY - 110 - rise, 20, C.cocoa);
+        if (c.mood === "delighted") this.heart(c.x, top - 14 - rise);
+        else label(ctx, "♪", c.x + 16, top - 14 - rise, 20, C.cocoa);
       }
       if (c.mood === "sad" && c.phase === "leaving" && c.t < 1.5) {
-        rrPath(ctx, c.x - 18, LAYOUT.customerY - 118, 36, 20, 10);
+        rrPath(ctx, c.x - 18, top - 26, 36, 20, 10);
         fillStroke(ctx, C.white, 2);
-        label(ctx, "…", c.x, LAYOUT.customerY - 110, 16);
+        label(ctx, "…", c.x, top - 18, 16);
       }
     }
 
@@ -587,17 +592,16 @@ export class Renderer {
     return g.coins >= upgradeCost(g, id, stats) ? "affordable" : "saving";
   }
 
-  private constructionFor(g: GameState, stats: StatBlock, id: UpgradeId, cx: number, cy: number, w: number, h: number, time: number, motion: boolean): void {
+  private constructionFor(g: GameState, stats: StatBlock, id: UpgradeId, spot: FacilitySpot, time: number, motion: boolean): void {
     const state = this.buildState(g, stats, id);
-    const def = upgradeById.get(id)!;
-    const line2 = state === "locked" ? `Opens with ${nameOf("region", def.region)}` : `Build · ${formatNumber(upgradeCost(g, id, stats))}`;
-    drawConstruction(this.ctx, cx, cy, w, h, nameOf("upgrade", id), line2, state, time, motion);
+    const { title, line2 } = constructionText(g, stats, id);
+    const sign = constructionSignRect(spot, title, line2);
+    drawConstruction(this.ctx, spot.x, spot.y, spot.w, spot.h, sign, title, line2, state, time, motion);
   }
 
   private drawGrove(g: GameState, stats: StatBlock, x: ViewExtras, time: number, motion: boolean): void {
     const ctx = this.ctx;
     const planted = slotsOf(stats.grovePlots);
-    const tScale = this.treeScale(g);
     // Back row (odd slots) then front row (even slots)
     for (const row of [1, 0]) {
       for (let j = 0; j < GROVE_TREES.length; j++) {
@@ -605,7 +609,7 @@ export class Renderer {
         const spot = GROVE_TREES[j];
         const idx = HOME_TREE_SLOTS + j;
         if (j < planted && g.trees[idx]?.length) {
-          drawTree(ctx, spot.x, spot.y, spot.scale * tScale, g.trees[idx], time, motion, x.treeShake[idx] ?? 0);
+          drawTree(ctx, spot.x, spot.y, spot.scale, g.trees[idx], time, motion, x.treeShake[idx] ?? 0);
         } else {
           drawEmptyPlot(ctx, spot.x, spot.y, spot.scale, j === planted, time, motion);
         }
@@ -613,7 +617,7 @@ export class Renderer {
     }
     const next = GROVE_TREES[planted];
     if (next && (g.upgrades.grove_plot ?? 0) < (upgradeById.get("grove_plot")?.maxLevel ?? 0)) {
-      this.constructionFor(g, stats, "grove_plot", next.x, next.y + 10, 150, 200, time, motion);
+      this.constructionFor(g, stats, "grove_plot", grovePlotSpot(planted), time, motion);
     }
   }
 
@@ -625,7 +629,7 @@ export class Renderer {
       if (!f || !visible(f.x - f.w, f.x + f.w)) continue;
       const lv = g.upgrades[id] ?? 0;
       if (lv <= 0) {
-        this.constructionFor(g, stats, id, f.x, f.y, f.w, f.h, time, motion);
+        this.constructionFor(g, stats, id, f, time, motion);
         continue;
       }
       switch (id) {
@@ -653,6 +657,19 @@ export class Renderer {
           label(ctx, left <= 0 ? "SPIN!" : `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, f.x, f.y - 19, 17, C.cocoa);
           break;
         }
+        case "order_board": {
+          const c = g.contract;
+          const now = x.now;
+          const notes = c.active
+            ? [{ recipe: recipeById.get(c.active.recipe)!, label: `${c.delivered}/${c.active.count}`, progress: c.delivered / c.active.count }]
+            : c.offers.map((o) => ({ recipe: recipeById.get(o.recipe)!, label: `×${o.count}` }));
+          drawOrderBoard(ctx, f.x, f.y, lv, notes, !!c.active, time, motion);
+          if (c.active) {
+            const left = Math.max(0, (c.expiresAt - now) / 1000);
+            label(ctx, `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, f.x, f.y - 20, 16, left < 30 ? C.coral : C.cocoa, "center", C.white);
+          }
+          break;
+        }
         case "golden_statue":
           drawStatue(ctx, f.x, f.y, lv, time, motion);
           break;
@@ -662,8 +679,8 @@ export class Renderer {
 
   private drawRegionSign(x: ViewExtras, foreground: boolean): void {
     if (!x.nextRegion || x.nextRegionCost === undefined) return;
-    const sp = REGION_SIGN[x.nextRegion];
-    if (sp.y > GROUND_Y !== foreground) return;
+    if (!foreground) return;
+    const sp = REGION_SIGN;
     drawSignpost(this.ctx, sp.x, sp.y, nameOf("region", x.nextRegion), `${formatNumber(x.nextRegionCost)} coins`);
   }
 

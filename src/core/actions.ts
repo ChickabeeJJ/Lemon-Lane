@@ -14,7 +14,7 @@ import {
   upgradeCost,
   type StatBlock,
 } from "./economy";
-import { emptyStats, type GameState } from "./state";
+import { emptyContracts, emptyStats, type GameState } from "./state";
 
 export type FailReason = "cost" | "max" | "locked" | "slots" | "owned" | "unknown" | "notReady";
 export type ActionResult = { ok: true; spent: number } | { ok: false; reason: FailReason };
@@ -150,7 +150,11 @@ export function performSunrise(g: GameState, now: number): { ok: true; tokens: n
   g.runCoins = 0;
   g.lemons = 0;
   g.drinks = 0;
+  g.perfectDrinks = 0;
+  g.pendingPerfect = false;
   g.pressProgress = 0;
+  // Offers use this chapter's recipes; the streak survives.
+  g.contract = { ...emptyContracts(), streak: g.contract.streak };
   g.upgrades = {};
   g.helpers = {};
   g.regions = ["tiny_yard"];

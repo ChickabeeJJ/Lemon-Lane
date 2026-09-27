@@ -2,7 +2,30 @@
 // that is rebuilt on every load and never saved.
 import type { CosmeticId, CustomerId, HelperId, PerkId, RecipeId, RegionId, UpgradeId } from "../content/types";
 
-export const SAVE_SCHEMA = 2;
+export interface ContractOffer {
+  recipe: RecipeId;
+  count: number;
+  seconds: number;
+  reward: number;
+  tier: number;
+}
+
+/** Order Board state (schema 3+). Times are wall-clock ms. */
+export interface ContractState {
+  offers: ContractOffer[];
+  active: ContractOffer | null;
+  delivered: number;
+  expiresAt: number;
+  /** When new offers appear (after finishing, expiring, or on rotation). */
+  refreshAt: number;
+  streak: number;
+}
+
+export function emptyContracts(): ContractState {
+  return { offers: [], active: null, delivered: 0, expiresAt: 0, refreshAt: 0, streak: 0 };
+}
+
+export const SAVE_SCHEMA = 3;
 
 /** Tree slots: 0–4 stand beside the stand (home zone), 5–10 are Orchard Grove plots. */
 export const HOME_TREE_SLOTS = 5;
@@ -44,6 +67,8 @@ export interface Stats {
   lemonsSold: number;
   diamondHarvested: number;
   wheelSpins: number;
+  perfectSqueezes: number;
+  contractsDone: number;
 }
 
 export interface GameState {
@@ -59,6 +84,10 @@ export interface GameState {
   runCoins: number;
   lemons: number;
   drinks: number;
+  /** How many of the drinks on the counter are Perfect (schema 3+). Always ≤ drinks. */
+  perfectDrinks: number;
+  /** The drink in the press was started with a Perfect Squeeze. */
+  pendingPerfect: boolean;
   pressProgress: number;
   upgrades: Partial<Record<UpgradeId, number>>;
   helpers: Partial<Record<HelperId, number>>;
@@ -80,13 +109,14 @@ export interface GameState {
   boostUntil: number;
   /** Wall-clock ms of the last Lucky Wheel spin (schema 2+). */
   lastSpinAt: number;
+  contract: ContractState;
   settings: Settings;
   /** Once the player has served at least once, tutorial hints fade. */
   tutorialDone: boolean;
 }
 
 export function emptyStats(): Stats {
-  return { lemonsHarvested: 0, customersServed: 0, drinksMade: 0, coinsEarned: 0, upgradesBought: 0, goldenHarvested: 0, bestCombo: 0, lemonsSold: 0, diamondHarvested: 0, wheelSpins: 0 };
+  return { lemonsHarvested: 0, customersServed: 0, drinksMade: 0, coinsEarned: 0, upgradesBought: 0, goldenHarvested: 0, bestCombo: 0, lemonsSold: 0, diamondHarvested: 0, wheelSpins: 0, perfectSqueezes: 0, contractsDone: 0 };
 }
 
 export function freshQuest(): QuestState {
@@ -103,6 +133,8 @@ export function createFreshState(now: number): GameState {
     runCoins: 0,
     lemons: 0,
     drinks: 0,
+    perfectDrinks: 0,
+    pendingPerfect: false,
     pressProgress: 0,
     upgrades: {},
     helpers: {},
@@ -122,6 +154,7 @@ export function createFreshState(now: number): GameState {
     lastDailyDay: "",
     boostUntil: 0,
     lastSpinAt: 0,
+    contract: emptyContracts(),
     settings: { music: true, sfx: true, reducedMotion: false },
     tutorialDone: false,
   };

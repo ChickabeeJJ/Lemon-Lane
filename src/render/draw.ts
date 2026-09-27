@@ -3,6 +3,7 @@
 // Entity functions draw with their anchor at the bottom-center contact point.
 import type { CustomerDef, HelperDef, RecipeDef } from "../content/types";
 import { C, FONT, LINE } from "./palette";
+import { drawCritter, glossyEye } from "./critters";
 
 type Ctx = CanvasRenderingContext2D;
 
@@ -188,7 +189,7 @@ export function drawTree(ctx: Ctx, x: number, y: number, s: number, fruits: { g:
 // Stations
 
 export function drawBasket(ctx: Ctx, x: number, y: number, level: number, lemons: number, cap: number): void {
-  const s = 1 + Math.min(0.45, level * 0.03);
+  const s = 1 + Math.min(0.4, level * 0.03);
   groundShadow(ctx, x, y, 90 * s);
   ctx.save();
   ctx.translate(x, y);
@@ -625,30 +626,10 @@ export function drawCart(ctx: Ctx, x: number, y: number, level: number, time: nu
 export type Mood = "happy" | "delighted" | "sad" | "neutral";
 
 function face(ctx: Ctx, x: number, y: number, r: number, mood: Mood, blink: boolean): void {
-  ctx.fillStyle = C.cocoa;
+  const k = r / 20;
+  for (const sx of [-1, 1]) glossyEye(ctx, x + sx * r * 0.42, y - r * 0.05, C.cocoa, mood, blink, k);
   ctx.strokeStyle = C.cocoa;
   ctx.lineWidth = Math.max(1.5, r * 0.1);
-  const ex = r * 0.38;
-  const ey = y - r * 0.05;
-  if (mood === "delighted") {
-    for (const sx of [-1, 1]) {
-      ctx.beginPath();
-      ctx.arc(x + sx * ex, ey + 2, r * 0.14, Math.PI, 0);
-      ctx.stroke();
-    }
-  } else if (blink) {
-    for (const sx of [-1, 1]) {
-      ctx.beginPath();
-      ctx.moveTo(x + sx * ex - 3, ey);
-      ctx.lineTo(x + sx * ex + 3, ey);
-      ctx.stroke();
-    }
-  } else {
-    for (const sx of [-1, 1]) {
-      ellipse(ctx, x + sx * ex, ey, r * 0.1, r * 0.13);
-      ctx.fill();
-    }
-  }
   ctx.fillStyle = C.blush;
   for (const sx of [-1, 1]) {
     ellipse(ctx, x + sx * r * 0.6, y + r * 0.22, r * 0.16, r * 0.1);
@@ -665,148 +646,8 @@ function face(ctx: Ctx, x: number, y: number, r: number, mood: Mood, blink: bool
 }
 
 export function drawCustomer(ctx: Ctx, x: number, y: number, def: CustomerDef, mood: Mood, t: number, walking: boolean, motion: boolean, s = 1, variant = 0): void {
-  if (def.id === "mochi_cat") {
-    drawCat(ctx, x, y, mood, t, walking, motion, s * 0.95, variant);
-    return;
-  }
-  const a = def.art;
-  const hop = walking && motion ? Math.abs(Math.sin(t * 10)) * 4 : motion ? Math.sin(t * 2.5) * 1 : 0;
-  groundShadow(ctx, x, y, 44 * s);
-  ctx.save();
-  ctx.translate(x, y - hop);
-  ctx.scale(s, s);
-  const headR = def.id === "turtle" ? 17 : 20;
-  // Tails and shells behind the body
-  if (a.ears === "squirrel") {
-    ctx.beginPath();
-    ctx.moveTo(12, -8);
-    ctx.bezierCurveTo(45, -10, 45, -60, 20, -58);
-    ctx.bezierCurveTo(34, -40, 26, -24, 10, -22);
-    ctx.closePath();
-    fillStroke(ctx, a.body);
-  } else if (a.ears === "fox") {
-    ctx.beginPath();
-    ctx.moveTo(10, -12);
-    ctx.quadraticCurveTo(42, -14, 38, -38);
-    ctx.quadraticCurveTo(28, -22, 10, -24);
-    ctx.closePath();
-    fillStroke(ctx, a.body);
-    ellipse(ctx, 37, -35, 4, 5);
-    ctx.fillStyle = a.accent;
-    ctx.fill();
-  }
-  if (a.shell) {
-    ellipse(ctx, 6, -22, 24, 20);
-    fillStroke(ctx, a.accent);
-    ctx.strokeStyle = C.cocoa;
-    ctx.lineWidth = 2;
-    star(ctx, 6, -24, 10, 6, 0.8);
-    ctx.stroke();
-  }
-  if (a.ears === "sun") {
-    ctx.fillStyle = C.gold;
-    for (let i = 0; i < 10; i++) {
-      const ang = (i / 10) * Math.PI * 2 + (motion ? t : 0) * 0.8;
-      ctx.save();
-      ctx.translate(0, -48);
-      ctx.rotate(ang);
-      ctx.beginPath();
-      ctx.moveTo(-5, -headR - 2);
-      ctx.lineTo(0, -headR - 13);
-      ctx.lineTo(5, -headR - 2);
-      ctx.closePath();
-      fillStroke(ctx, C.gold, 2);
-      ctx.restore();
-    }
-  }
-  // Body + feet
-  ellipse(ctx, -7, -2, 6, 4);
-  fillStroke(ctx, a.accent, 2);
-  ellipse(ctx, 7, -2, 6, 4);
-  fillStroke(ctx, a.accent, 2);
-  ellipse(ctx, 0, -18, 16, 16);
-  fillStroke(ctx, a.body);
-  ellipse(ctx, 0, -14, 9, 9);
-  ctx.fillStyle = a.accent === C.white ? C.cream : C.white;
-  ctx.globalAlpha = 0.6;
-  ctx.fill();
-  ctx.globalAlpha = 1;
-  // Ears
-  const hy = -48;
-  const earPairs = (fn: (sx: number) => void) => [-1, 1].forEach(fn);
-  switch (a.ears) {
-    case "cat":
-      earPairs((sx) => {
-        ctx.beginPath();
-        ctx.moveTo(sx * 6, hy - 16);
-        ctx.lineTo(sx * 17, hy - 28);
-        ctx.lineTo(sx * 19, hy - 8);
-        ctx.closePath();
-        fillStroke(ctx, a.body);
-      });
-      break;
-    case "rabbit":
-      earPairs((sx) => {
-        ellipse(ctx, sx * 9, hy - 32, 6, 18, sx * 0.15);
-        fillStroke(ctx, a.body);
-        ellipse(ctx, sx * 9, hy - 32, 2.8, 12, sx * 0.15);
-        ctx.fillStyle = a.accent;
-        ctx.fill();
-      });
-      break;
-    case "squirrel":
-    case "otter":
-      earPairs((sx) => {
-        ellipse(ctx, sx * 15, hy - 14, 6, 6);
-        fillStroke(ctx, a.body);
-      });
-      break;
-    case "fox":
-      earPairs((sx) => {
-        ctx.beginPath();
-        ctx.moveTo(sx * 5, hy - 16);
-        ctx.lineTo(sx * 16, hy - 34);
-        ctx.lineTo(sx * 20, hy - 6);
-        ctx.closePath();
-        fillStroke(ctx, a.body);
-      });
-      break;
-    default:
-      break;
-  }
-  // Head
-  ellipse(ctx, 0, hy, headR + 1, headR);
-  fillStroke(ctx, a.body);
-  if (a.ears === "fox" || a.ears === "otter") {
-    ellipse(ctx, 0, hy + 8, 11, 8);
-    ctx.fillStyle = a.accent;
-    ctx.fill();
-  }
-  if (def.id === "duckling") {
-    ctx.beginPath();
-    ctx.moveTo(-3, hy - headR + 2);
-    ctx.quadraticCurveTo(0, hy - headR - 10, 5, hy - headR - 4);
-    ctx.lineWidth = 3;
-    ctx.strokeStyle = C.cocoa;
-    ctx.stroke();
-  }
-  const blink = motion && Math.sin(t * 1.3 + x) > 0.985;
-  face(ctx, 0, hy, headR, mood, blink);
-  if (def.id === "duckling") {
-    ellipse(ctx, 0, hy + 5, 8, 4);
-    fillStroke(ctx, a.accent, 2);
-  }
-  if (a.ears === "otter") {
-    ctx.strokeStyle = C.cocoa;
-    ctx.lineWidth = 1.2;
-    earPairs((sx) => {
-      ctx.beginPath();
-      ctx.moveTo(sx * 8, hy + 6);
-      ctx.lineTo(sx * 18, hy + 3);
-      ctx.stroke();
-    });
-  }
-  ctx.restore();
+  if (def.id === "mochi_cat") drawCat(ctx, x, y, mood, t, walking, motion, s * 0.95, variant);
+  else drawCritter(ctx, def.id, x, y, mood, t, walking, motion, s * 0.95);
 }
 
 export function drawHelper(ctx: Ctx, x: number, y: number, def: HelperDef, t: number, working: boolean, motion: boolean, s = 1): void {
@@ -816,9 +657,34 @@ export function drawHelper(ctx: Ctx, x: number, y: number, def: HelperDef, t: nu
   ctx.save();
   ctx.translate(x, y - bounce);
   ctx.scale(s, s);
-  // Bean body
+  // Feet and little arms behind the bean body
+  const step = working && motion ? Math.sin(t * 16) * 2 : 0;
+  ellipse(ctx, -8, -2 - Math.max(0, step), 7, 4.5);
+  fillStroke(ctx, a.accent, 2.2);
+  ellipse(ctx, 8, -2 - Math.max(0, -step), 7, 4.5);
+  fillStroke(ctx, a.accent, 2.2);
+  const armSwing = working && motion ? Math.sin(t * 14) * 0.6 : 0.15;
+  for (const sx of [-1, 1]) {
+    ctx.save();
+    ctx.translate(sx * 15, -26);
+    ctx.rotate(sx * (0.5 + (sx > 0 ? armSwing : -armSwing * 0.5)));
+    ellipse(ctx, 0, 8, 5, 9);
+    fillStroke(ctx, a.body, 2.2);
+    ctx.restore();
+  }
+  // Bean body with a soft sheen
   rrPath(ctx, -17, -52, 34, 52, 17);
   fillStroke(ctx, a.body);
+  ctx.save();
+  rrPath(ctx, -17, -52, 34, 52, 17);
+  ctx.clip();
+  ctx.fillStyle = "rgba(255,253,247,0.35)";
+  ellipse(ctx, -7, -44, 7, 5, -0.5);
+  ctx.fill();
+  ctx.fillStyle = "rgba(90,70,56,0.08)";
+  ellipse(ctx, 10, -20, 10, 30);
+  ctx.fill();
+  ctx.restore();
   // Apron
   ctx.beginPath();
   ctx.moveTo(-12, -26);

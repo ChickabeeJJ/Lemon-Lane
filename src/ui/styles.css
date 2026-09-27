@@ -924,3 +924,164 @@ body.reduced-motion *::after {
     font-size: 20px;
   }
 }
+
+/* ---------- Info stack: Market Demand + active order ---------- */
+.info-stack {
+  position: absolute;
+  top: 62px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  z-index: 4;
+  max-width: min(330px, 60%);
+}
+.info-pill {
+  font-size: 14px;
+  padding: 3px 6px 3px 4px;
+  cursor: pointer;
+  white-space: normal;
+  text-align: left;
+}
+.info-pill img {
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+}
+.info-pill.hot {
+  background: #fff1b8;
+}
+.info-pill.contract {
+  cursor: default;
+  gap: 4px;
+}
+.info-pill.contract.urgent {
+  background: #fde8e3;
+}
+.info-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-weight: 800;
+  cursor: pointer;
+}
+.info-pill .btn.small {
+  min-height: 30px;
+  padding: 2px 10px;
+  font-size: 13px;
+}
+/* Zone dots sit at the bottom of the stage on wide screens, clear of the HUD and pills. */
+.zone-map {
+  top: auto;
+  bottom: 10px;
+}
+#toasts {
+  top: auto;
+  bottom: 48px;
+  flex-direction: column-reverse;
+}
+.zone-banner {
+  top: 16%;
+}
+
+/* ---------- Order Board modal ---------- */
+.offer-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  text-align: left;
+}
+.offer {
+  display: grid;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  background: var(--white);
+  border: var(--line) solid var(--cocoa);
+  border-radius: 14px;
+  box-shadow: 0 3px 0 rgba(90, 70, 56, 0.3);
+}
+.offer img {
+  width: 52px;
+  height: 52px;
+}
+.offer.tier1 {
+  background: #fff8e2;
+}
+.offer.tier2 {
+  background: #fff1b8;
+}
+.offer.active {
+  background: #f3fbe9;
+}
+.offer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+  font-size: 14px;
+}
+.offer-body em {
+  font-style: normal;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--deep-leaf);
+}
+.offer .reward {
+  font-weight: 800;
+  font-size: 16px;
+}
+.offer-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.modal .streak {
+  font-weight: 800;
+  color: var(--deep-leaf);
+}
+.modal .warn {
+  font-weight: 700;
+  color: #b4513f;
+}
+
+@media (orientation: portrait), (max-width: 600px) {
+  .zone-map {
+    top: 62px;
+    bottom: auto;
+  }
+  .info-stack {
+    top: 100px;
+    max-width: 75%;
+  }
+  .info-pill {
+    font-size: 12px;
+  }
+  #toasts {
+    bottom: 150px;
+  }
+  .zone-banner {
+    top: 31%;
+  }
+  .offer {
+    grid-template-columns: 40px minmax(0, 1fr);
+  }
+  .offer img {
+    width: 40px;
+    height: 40px;
+  }
+  .offer-actions {
+    grid-column: 1 / -1;
+    flex-direction: row;
+    justify-content: flex-end;
+  }
+}

@@ -34,13 +34,17 @@ function counterFor(g: GameState, kind: QuestKind): number {
       return g.lifetime.lemonsSold;
     case "spin":
       return g.lifetime.wheelSpins;
+    case "perfect":
+      return g.lifetime.perfectSqueezes;
+    case "contract":
+      return g.lifetime.contractsDone;
     default:
       return 0;
   }
 }
 
 function isCumulative(kind: QuestKind): boolean {
-  return kind === "harvest" || kind === "serve" || kind === "earn" || kind === "buyUpgrade" || kind === "golden" || kind === "sell" || kind === "spin";
+  return kind === "harvest" || kind === "serve" || kind === "earn" || kind === "buyUpgrade" || kind === "golden" || kind === "sell" || kind === "spin" || kind === "perfect" || kind === "contract";
 }
 
 function generatedDef(g: GameState): QuestDef {
@@ -64,6 +68,8 @@ export function evaluateQuest(g: GameState): ActiveQuest {
     case "golden":
     case "sell":
     case "spin":
+    case "perfect":
+    case "contract":
       progress = counterFor(g, def.kind) - g.quest.baseline;
       break;
     case "upgradeLevel":

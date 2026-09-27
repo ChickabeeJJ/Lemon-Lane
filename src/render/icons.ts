@@ -1,7 +1,7 @@
 // UI icons are drawn with the same procedural art functions as the world,
 // so menus and the lane share one visual language.
 import { WHEEL, customerById, helperById, recipeById } from "../content/content";
-import { drawBeehive, drawChute, drawEmptyPlot, drawFactory, drawFountain, drawSellCrate, drawSprinkler, drawStatue, drawWheel } from "./drawWorld";
+import { drawOrderBoard, drawBeehive, drawChute, drawEmptyPlot, drawFactory, drawFountain, drawSellCrate, drawSprinkler, drawStatue, drawWheel } from "./drawWorld";
 import type { CustomerId, HelperId, RecipeId, UpgradeId, PerkId, RegionId } from "../content/types";
 import {
   drawBasket,
@@ -153,6 +153,10 @@ export function upgradeIcon(id: UpgradeId): string {
       case "fountain":
         fit(ctx, 0.34, SIZE / 2, SIZE - 14);
         drawFountain(ctx, 0, 0, 3, 0.3, false);
+        break;
+      case "order_board":
+        fit(ctx, 0.36, SIZE / 2, SIZE - 6);
+        drawOrderBoard(ctx, 0, 0, 1, [{ recipe: recipeById.get("classic")!, label: "×8" }, { recipe: recipeById.get("honey_lemon")!, label: "×15" }], false, 0, false);
         break;
       case "golden_statue":
         fit(ctx, 0.3, SIZE / 2, SIZE - 6);

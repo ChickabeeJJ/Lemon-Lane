@@ -25,7 +25,9 @@ export type AnalyticsEvent =
   | "session_10min"
   | "wheel_spin"
   | "lemons_sold"
-  | "zone_visit";
+  | "zone_visit"
+  | "contract_complete"
+  | "contract_expired";
 
 export type Payload = Record<string, string | number | boolean>;
 

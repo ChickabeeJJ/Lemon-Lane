@@ -24,9 +24,9 @@ export type SimEvent =
   | { type: "fountain"; amount: number }
   | { type: "basketFull" }
   | { type: "drink" }
-  | { type: "squeeze" }
+  | { type: "squeeze"; perfect: boolean }
   | { type: "arrive"; uid: number }
-  | { type: "sale"; uid: number; amount: number; tip: number; premium: boolean; delighted: boolean; combo: number; done: boolean; by: Actor }
+  | { type: "sale"; uid: number; amount: number; tip: number; premium: boolean; perfect: boolean; delighted: boolean; combo: number; done: boolean; by: Actor }
   | { type: "leave"; uid: number }
   | { type: "delivery"; amount: number }
   | { type: "sticker"; customer: CustomerId }
@@ -175,12 +175,33 @@ export function pressCanRun(g: GameState, ctx: SimContext): boolean {
   return g.lemons >= activeRecipe(g).lemons && g.drinks < slotsOf(ctx.stats.counterCap);
 }
 
-export function squeeze(g: GameState, ctx: SimContext): boolean {
+/** Perfect Squeeze gauge position 0..1, driven by the session clock (so it's deterministic). */
+export function squeezeMeter(s: SessionState): number {
+  return (1 - Math.cos(s.time * TUNING.meterSpeed)) / 2;
+}
+
+export function isPerfectMoment(s: SessionState): boolean {
+  return squeezeMeter(s) >= 1 - TUNING.perfectWindow;
+}
+
+export function squeeze(g: GameState, s: SessionState, ctx: SimContext): boolean {
   if (!pressCanRun(g, ctx)) return false;
-  g.pressProgress = Math.min(1, g.pressProgress + TUNING.squeezeBoost);
-  ctx.emit({ type: "squeeze" });
+  const perfect = isPerfectMoment(s);
+  g.pressProgress = Math.min(1, g.pressProgress + (perfect ? TUNING.perfectBoost : TUNING.squeezeBoost));
+  if (perfect) {
+    g.pendingPerfect = true;
+    g.run.perfectSqueezes++;
+    g.lifetime.perfectSqueezes++;
+  }
+  ctx.emit({ type: "squeeze", perfect });
   finishPress(g, ctx);
   return true;
+}
+
+/** Keep the Perfect-drink count consistent after drinks leave the counter. */
+export function clampPerfect(g: GameState): void {
+  if (g.perfectDrinks > g.drinks) g.perfectDrinks = g.drinks;
+  if (g.perfectDrinks < 0) g.perfectDrinks = 0;
 }
 
 function finishPress(g: GameState, ctx: SimContext): void {
@@ -188,6 +209,10 @@ function finishPress(g: GameState, ctx: SimContext): void {
   if (g.pressProgress >= 1 && g.lemons >= recipe.lemons && g.drinks < slotsOf(ctx.stats.counterCap)) {
     g.lemons -= recipe.lemons;
     g.drinks++;
+    if (g.pendingPerfect) {
+      g.perfectDrinks++;
+      g.pendingPerfect = false;
+    }
     g.pressProgress = 0;
     g.run.drinksMade++;
     g.lifetime.drinksMade++;
@@ -215,11 +240,15 @@ export function serveCustomerByUid(g: GameState, s: SessionState, ctx: SimContex
 function serveCustomer(g: GameState, s: SessionState, ctx: SimContext, c: Customer, by: Actor): boolean {
   const def = CUSTOMERS.find((d) => d.id === c.type)!;
   const st = ctx.stats;
+  const perfect = g.perfectDrinks > 0;
   g.drinks--;
+  if (perfect) g.perfectDrinks--;
+  clampPerfect(g);
   c.owed--;
   const done = c.owed <= 0;
   const favorite = def.favorite === g.activeRecipe;
   let amount = baseDrinkValue(g, st, ctx.now) * def.valueMult * (favorite ? 1 + st.favoriteBonus : 1);
+  if (perfect) amount *= 1 + TUNING.perfectBonus;
   if (c.premium) amount *= 1 + st.premiumBonus;
   let tip = 0;
   let combo = s.combo;
@@ -233,7 +262,7 @@ function serveCustomer(g: GameState, s: SessionState, ctx: SimContext, c: Custom
   amount *= 1 + TUNING.comboStep * Math.max(0, combo - 1);
   if (done && ctx.rng() < Math.min(1, st.tipChance + def.tipBonus)) tip = amount * TUNING.tipSize;
   const paid = addCoins(g, amount + tip);
-  const delighted = favorite || tip > 0 || c.premium;
+  const delighted = favorite || tip > 0 || c.premium || perfect;
   if (done) {
     c.phase = "served";
     c.t = 0;
@@ -246,7 +275,7 @@ function serveCustomer(g: GameState, s: SessionState, ctx: SimContext, c: Custom
       ctx.emit({ type: "sticker", customer: c.type });
     }
   }
-  ctx.emit({ type: "sale", uid: c.uid, amount: paid, tip, premium: c.premium, delighted, combo, done, by });
+  ctx.emit({ type: "sale", uid: c.uid, amount: paid, tip, premium: c.premium, perfect, delighted, combo, done, by });
   return true;
 }
 
@@ -380,6 +409,7 @@ function stepOnce(g: GameState, s: SessionState, dt: number, ctx: SimContext): v
     if (s.deliveryTimer >= interval) {
       s.deliveryTimer = 0;
       g.drinks--;
+      clampPerfect(g);
       const amount = addCoins(g, baseDrinkValue(g, st, ctx.now) * TUNING.deliveryValue);
       ctx.emit({ type: "delivery", amount });
     }

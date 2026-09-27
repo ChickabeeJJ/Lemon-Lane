@@ -48,7 +48,7 @@ Rules the code keeps:
 ## Save format
 
 ```json
-{ "schema": 2, "savedAt": 1727430000000, "state": { ...GameState } }
+{ "schema": 3, "savedAt": 1727430000000, "state": { ...GameState } }
 ```
 
 Keys: `lemonlane_save` (primary), `lemonlane_save_backup` (previous primary, refreshed at most once a minute),
@@ -102,7 +102,8 @@ The camera (`Renderer.setZone`) eases between zone left edges; sky is fixed, clo
 Each `UpgradeDef` has a `zone`; `FACILITY_IDS` are upgrades that exist as buildings (level 0 = tappable construction
 outline, positions in `core/layout.ts` `FACILITY_SPOTS`). Tree slots 0–4 stand beside the stand, 5–10 are Orchard
 Grove plots (`treeSpot()`, `treeSlotActive()`). Lucky Wheel logic is in `core/wheel.ts`; selling, the Lemon Chute and
-the fountain are in `core/sim.ts`.
+the fountain are in `core/sim.ts`. Perfect Squeeze is in `core/sim.ts` (`squeezeMeter`), Market Demand in
+`core/economy.ts` (`demandRecipe`), and the Order Board in `core/contracts.ts`.
 
 ## Rendering
 
@@ -122,5 +123,8 @@ bobbing and particle travel.
   queue bounds, determinism, delta clamping, goals pay once
 - `tests/world.test.ts` — Sell Crate, Lemon Chute, diamond lemons, grove plots, Lucky Wheel cooldown/rewards,
   fountain income, facility locks, save migration 1 → 2
+- `tests/loops.test.ts` — Perfect Squeeze timing, Market Demand rotation/bonus, Order Board offers, partial and
+  complete delivery, streaks, expiry, Sunrise interaction, migration 2 → 3
+- `tests/layout.test.ts` — no overlapping buildings, trees, construction outlines or signs in any zone
 - `tests/balance.test.ts` — headless bots (active / casual / automation-first) play the real economy and assert the
   first-ten-minutes pacing and time-to-first-Sunrise

@@ -57,7 +57,8 @@ describe("press and serving", () => {
     const g = createFreshState(0);
     const ctx = makeCtx(g);
     g.lemons = 10;
-    for (let i = 0; i < 20; i++) squeeze(g, ctx);
+    const s = createSession();
+    for (let i = 0; i < 20; i++) squeeze(g, s, ctx);
     expect(g.drinks).toBe(computeStats(g).counterCap);
     expect(g.lemons).toBe(10 - g.drinks);
   });

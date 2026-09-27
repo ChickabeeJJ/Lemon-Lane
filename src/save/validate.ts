@@ -1,7 +1,7 @@
 // Save validation: every loaded value is type-checked, finite, and clamped.
 // Unknown IDs are dropped; missing fields fall back to fresh defaults.
 import { COSMETICS, HELPERS, PERKS, QUESTS, RECIPES, REGIONS, UPGRADES, CUSTOMERS } from "../content/content";
-import { createFreshState, emptyStats, GROVE_TREE_SLOTS, HOME_TREE_SLOTS, SAVE_SCHEMA, type Fruit, type GameState, type Stats } from "../core/state";
+import { createFreshState, emptyContracts, emptyStats, GROVE_TREE_SLOTS, HOME_TREE_SLOTS, SAVE_SCHEMA, type ContractOffer, type ContractState, type Fruit, type GameState, type Stats } from "../core/state";
 
 const MAX_NUM = 1e300;
 
@@ -62,6 +62,29 @@ function trees(v: unknown): Fruit[][] {
   );
 }
 
+function offer(v: unknown, recipes: string[]): ContractOffer | null {
+  if (!isObj(v)) return null;
+  const recipe = str(v.recipe, "");
+  if (!recipes.includes(recipe)) return null;
+  const count = int(v.count, 0, 1, 10_000);
+  const seconds = int(v.seconds, 0, 10, 24 * 3600);
+  const reward = num(v.reward, 0);
+  if (count <= 0 || seconds <= 0) return null;
+  return { recipe: recipe as ContractOffer["recipe"], count, seconds, reward, tier: int(v.tier, 0, 0, 9) };
+}
+
+function contracts(v: unknown, recipes: string[]): ContractState {
+  const c = emptyContracts();
+  if (!isObj(v)) return c;
+  c.offers = Array.isArray(v.offers) ? v.offers.slice(0, 3).map((o) => offer(o, recipes)).filter((o): o is ContractOffer => !!o) : [];
+  c.active = offer(v.active, recipes);
+  c.delivered = c.active ? int(v.delivered, 0, 0, c.active.count) : 0;
+  c.expiresAt = c.active ? num(v.expiresAt, 0) : 0;
+  c.refreshAt = num(v.refreshAt, 0);
+  c.streak = int(v.streak, 0, 0, 100);
+  return c;
+}
+
 /**
  * Turn arbitrary parsed JSON into a valid GameState. Never throws.
  * `issues` collects human-readable notes for development logs.
@@ -100,6 +123,8 @@ export function sanitizeState(raw: unknown, now: number, issues: string[] = []):
     runCoins: num(raw.runCoins, 0),
     lemons: int(raw.lemons, 0, 0, 1e6),
     drinks: int(raw.drinks, 0, 0, 1e6),
+    perfectDrinks: int(raw.perfectDrinks, 0, 0, 1e6),
+    pendingPerfect: bool(raw.pendingPerfect, false),
     pressProgress: num(raw.pressProgress, 0, 0, 1),
     upgrades: levels(raw.upgrades, UPGRADES),
     helpers: levels(raw.helpers, HELPERS),
@@ -124,6 +149,7 @@ export function sanitizeState(raw: unknown, now: number, issues: string[] = []):
     lastDailyDay: str(raw.lastDailyDay, "", 16),
     boostUntil: num(raw.boostUntil, 0),
     lastSpinAt: num(raw.lastSpinAt, 0),
+    contract: contracts(raw.contract, recipes),
     settings: {
       music: bool(settings.music, true),
       sfx: bool(settings.sfx, true),
@@ -135,6 +161,7 @@ export function sanitizeState(raw: unknown, now: number, issues: string[] = []):
   if (g.lastActiveAt > now) g.lastActiveAt = now;
   if (g.boostUntil > now + 10 * 60_000) g.boostUntil = 0;
   if (g.lastSpinAt > now) g.lastSpinAt = now;
+  if (g.perfectDrinks > g.drinks) g.perfectDrinks = g.drinks;
   // A generated goal must carry a positive target.
   if (g.quest.index >= QUESTS.length && g.quest.target <= 0) {
     g.quest.target = 50;

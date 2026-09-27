@@ -1,7 +1,7 @@
 // SaveManager: serialization, versioned migration, validation, backup and conflict handling.
 import { SAVE_SCHEMA, createFreshState, type GameState } from "../core/state";
 import { sanitizeState } from "./validate";
-import { QUESTS, QUEST_IDS_V1 } from "../content/content";
+import { QUESTS, QUEST_IDS_V1, QUEST_IDS_V2 } from "../content/content";
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -40,6 +40,19 @@ export const MIGRATIONS: MigrationTable = {
       index = QUESTS.length + (oldIndex - QUEST_IDS_V1.length);
     }
     return { ...state, quest: { ...quest, index }, lastSpinAt: 0 };
+  },
+  /**
+   * 2 → 3: Perfect Squeeze, Market Demand and the Order Board. New goals were inserted, so the goal
+   * index is remapped by ID again; contracts and perfect drinks start empty.
+   */
+  2: (state) => {
+    const quest = (typeof state.quest === "object" && state.quest !== null ? state.quest : {}) as Record<string, unknown>;
+    const oldIndex = typeof quest.index === "number" ? Math.max(0, Math.floor(quest.index)) : 0;
+    const index =
+      oldIndex < QUEST_IDS_V2.length
+        ? Math.max(0, QUESTS.findIndex((q) => q.id === QUEST_IDS_V2[oldIndex]))
+        : QUESTS.length + (oldIndex - QUEST_IDS_V2.length);
+    return { ...state, quest: { ...quest, index }, perfectDrinks: 0, pendingPerfect: false, contract: null };
   },
 };
 

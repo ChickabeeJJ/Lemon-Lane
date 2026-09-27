@@ -69,3 +69,14 @@ Format follows bible §41: decision, context, alternatives, consequences.
 ### D-014 — Lucky Wheel is free and timed
 - **Decision:** No ads or purchases on the wheel; rewards scale with income; applied atomically at spin time
   (the animation is presentation only, so a refresh mid-spin never loses or duplicates a prize).
+
+### D-015 — Overlap rules are tested, not eyeballed
+- **Decision:** World footprints and construction-sign rects are pure functions in `core/layout.ts`; the renderer
+  draws from them and `tests/layout.test.ts` checks every pair that can be on screen together (with worst-case sign
+  text). Backdrop buildings are faded and text-free so they never compete with foreground signs.
+
+### D-016 — Three more loops, each tied to an existing verb
+- **Perfect Squeeze** rewards the "squeeze" verb with timing skill (active play has agency, bible §5).
+- **Market Demand** gives the recipe choice a reason to change over time (speed vs. value vs. hot).
+- **Order Board** gives production a medium-term goal (plan stock, switch recipes, beat the clock), with a gentle
+  failure (streak reset only). Deterministic, wall-clock based, safe across refresh and offline.

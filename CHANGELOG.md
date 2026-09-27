@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.3.0 — Cozier critters, tidier lane, more to do
+
+### Added
+- **Perfect Squeeze**: a timing gauge on the press. Squeeze while the needle is in the gold for a Perfect drink
+  (★ on the counter, +50% value, served first, always delights).
+- **Market Demand**: one recipe is "hot" (×1.5) for four minutes at a time; the HUD pill shows it and switches to it
+  in one tap when you own it.
+- **Order Board** (Market Square): three timed bulk orders at a time (quick / big / huge). Deliver drinks of the
+  requested recipe from any zone via the HUD pill; finishing orders back to back builds a streak (+10% each, up to
+  +50%). Expired orders only reset the streak. Board levels raise every reward.
+- New goals for Perfect Squeezes, the Order Board and the first order.
+- **Every customer redesigned** to match the new cat: glossy eyes, blush, cheek fluff and personality props
+  (rabbit with bow and pom-pom tail, duckling with tuft and flappy wings, squirrel with acorn and bushy tail, otter
+  with whisker pads and shell, fox with scarf and white-tipped tail, turtle with sun hat and patterned shell,
+  Golden Sun with crown and ray halo). Worried (never angry) faces when a customer gives up.
+- Helpers get glossy eyes, little feet and arms, and a soft sheen.
+
+### Fixed
+- **Overlaps**: every facility, grove tree, construction outline and sign now has a footprint in `core/layout.ts`,
+  and `tests/layout.test.ts` fails the build if any two can overlap. Construction signs are compact and sized to their
+  text; the Beehive and Tree Plot signs no longer collide; the grove is one tidy row.
+- Order bubbles sit above each species' real height (no more bubbles on rabbit ears).
+- The next-lane signpost has one clear spot; market shop fronts are faded backdrops; no ferris wheel behind the Lucky
+  Wheel; toasts moved to the bottom so they never cover pills or banners.
+
+### Changed
+- Save schema 2 → 3 (goal remap by ID; Perfect drinks and Order Board state added). Tests: 97.
+
 ## 0.2.0 — Explore the lane
 
 ### Added

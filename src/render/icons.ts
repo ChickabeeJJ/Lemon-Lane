@@ -1,6 +1,7 @@
 // UI icons are drawn with the same procedural art functions as the world,
 // so menus and the lane share one visual language.
-import { customerById, helperById, recipeById } from "../content/content";
+import { WHEEL, customerById, helperById, recipeById } from "../content/content";
+import { drawBeehive, drawChute, drawEmptyPlot, drawFactory, drawFountain, drawSellCrate, drawSprinkler, drawStatue, drawWheel } from "./drawWorld";
 import type { CustomerId, HelperId, RecipeId, UpgradeId, PerkId, RegionId } from "../content/types";
 import {
   drawBasket,
@@ -119,6 +120,43 @@ export function upgradeIcon(id: UpgradeId): string {
         fit(ctx, 1.1);
         drawFlowerPot(ctx, -18, 0, 0, 0, false);
         drawFlowerPot(ctx, 18, 0, 2, 0, false);
+        break;
+      case "grove_plot":
+        fit(ctx, 0.26, SIZE / 2, SIZE - 12);
+        drawEmptyPlot(ctx, 0, 30, 1.6, false, 0, false);
+        drawTree(ctx, 0, 10, 0.95, ripe(4), 0, false);
+        break;
+      case "sprinkler":
+        fit(ctx, 0.42, SIZE / 2, SIZE - 12);
+        drawSprinkler(ctx, 0, 0, 0, 0.4, false);
+        break;
+      case "beehive":
+        fit(ctx, 0.46, SIZE / 2, SIZE - 6);
+        drawBeehive(ctx, 0, 0, 3, 0, false);
+        break;
+      case "sell_crate":
+        fit(ctx, 0.36, SIZE / 2 - 8, SIZE - 8);
+        drawSellCrate(ctx, 0, 0, 1, 5, "", 0, false);
+        break;
+      case "lemon_chute":
+        fit(ctx, 0.34, SIZE / 2 + 6, SIZE - 8);
+        drawChute(ctx, 0, 0, 0, false);
+        break;
+      case "juice_factory":
+        fit(ctx, 0.26, SIZE / 2, SIZE - 8);
+        drawFactory(ctx, 0, 0, 1, false, recipeById.get("classic")!, 0, false);
+        break;
+      case "lucky_wheel":
+        fit(ctx, 0.3, SIZE / 2, SIZE - 6);
+        drawWheel(ctx, 0, 0, WHEEL, 0, false, 0, false);
+        break;
+      case "fountain":
+        fit(ctx, 0.34, SIZE / 2, SIZE - 14);
+        drawFountain(ctx, 0, 0, 3, 0.3, false);
+        break;
+      case "golden_statue":
+        fit(ctx, 0.3, SIZE / 2, SIZE - 6);
+        drawStatue(ctx, 0, 0, 1, 0, false);
         break;
       case "recipe_book":
         fit(ctx, 1, SIZE / 2, SIZE / 2 + 20);

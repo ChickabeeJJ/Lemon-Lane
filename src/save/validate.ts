@@ -1,7 +1,7 @@
 // Save validation: every loaded value is type-checked, finite, and clamped.
 // Unknown IDs are dropped; missing fields fall back to fresh defaults.
 import { COSMETICS, HELPERS, PERKS, QUESTS, RECIPES, REGIONS, UPGRADES, CUSTOMERS } from "../content/content";
-import { createFreshState, emptyStats, SAVE_SCHEMA, type Fruit, type GameState, type Stats } from "../core/state";
+import { createFreshState, emptyStats, GROVE_TREE_SLOTS, HOME_TREE_SLOTS, SAVE_SCHEMA, type Fruit, type GameState, type Stats } from "../core/state";
 
 const MAX_NUM = 1e300;
 
@@ -51,9 +51,13 @@ function stats(v: unknown): Stats {
 
 function trees(v: unknown): Fruit[][] {
   if (!Array.isArray(v)) return createFreshState(0).trees;
-  return v.slice(0, 5).map((tree) =>
+  return v.slice(0, HOME_TREE_SLOTS + GROVE_TREE_SLOTS).map((tree) =>
     Array.isArray(tree)
-      ? tree.slice(0, 12).map((f) => ({ g: num(isObj(f) ? f.g : 0, 0, 0, 1), golden: bool(isObj(f) ? f.golden : false, false) }))
+      ? tree.slice(0, 12).map((f) => ({
+          g: num(isObj(f) ? f.g : 0, 0, 0, 1),
+          golden: bool(isObj(f) ? f.golden : false, false),
+          diamond: bool(isObj(f) ? f.diamond : false, false),
+        }))
       : [],
   );
 }
@@ -119,6 +123,7 @@ export function sanitizeState(raw: unknown, now: number, issues: string[] = []):
     run: stats(raw.run),
     lastDailyDay: str(raw.lastDailyDay, "", 16),
     boostUntil: num(raw.boostUntil, 0),
+    lastSpinAt: num(raw.lastSpinAt, 0),
     settings: {
       music: bool(settings.music, true),
       sfx: bool(settings.sfx, true),
@@ -129,6 +134,7 @@ export function sanitizeState(raw: unknown, now: number, issues: string[] = []):
   // Clock sanity: timestamps from the future are clamped to now.
   if (g.lastActiveAt > now) g.lastActiveAt = now;
   if (g.boostUntil > now + 10 * 60_000) g.boostUntil = 0;
+  if (g.lastSpinAt > now) g.lastSpinAt = now;
   // A generated goal must carry a positive target.
   if (g.quest.index >= QUESTS.length && g.quest.target <= 0) {
     g.quest.target = 50;

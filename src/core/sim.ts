@@ -6,18 +6,22 @@ import {
   activeRecipe,
   baseDrinkValue,
   helperInterval,
+  fountainPerSec,
   maxCombo,
+  rawLemonValue,
   slotsOf,
   type StatBlock,
 } from "./economy";
 import { LAYOUT, queueSlotX } from "./layout";
 import { pickWeighted, type Rng } from "./rng";
-import type { Customer, Fruit, GameState, SessionState } from "./state";
+import { GROVE_TREE_SLOTS, HOME_TREE_SLOTS, type Customer, type Fruit, type GameState, type SessionState } from "./state";
 
 export type Actor = "player" | "helper";
 
 export type SimEvent =
-  | { type: "harvest"; tree: number; fruit: number; golden: boolean; bonus: number; by: Actor }
+  | { type: "harvest"; tree: number; fruit: number; golden: boolean; diamond: boolean; bonus: number; by: Actor; sold: boolean }
+  | { type: "sell"; count: number; amount: number; by: Actor }
+  | { type: "fountain"; amount: number }
   | { type: "basketFull" }
   | { type: "drink" }
   | { type: "squeeze" }
@@ -49,23 +53,50 @@ export function addCoins(g: GameState, amount: number): number {
 }
 
 function newFruit(ctx: SimContext): Fruit {
-  return { g: 0, golden: ctx.rng() < ctx.stats.goldenChance };
+  const r = ctx.rng();
+  const diamond = r < ctx.stats.diamondChance;
+  return { g: 0, golden: !diamond && r < ctx.stats.diamondChance + ctx.stats.goldenChance, diamond };
 }
 
-/** Keep tree/fruit arrays in sync with current tree count and fruit slots. */
+/** Is tree slot `i` planted? Slots 0–4 stand by the stand, 5–10 are grove plots. */
+export function treeSlotActive(i: number, stats: StatBlock): boolean {
+  return i < HOME_TREE_SLOTS ? i < slotsOf(stats.treeCount) : i - HOME_TREE_SLOTS < slotsOf(stats.grovePlots);
+}
+
+/** Keep tree/fruit arrays in sync with planted slots and fruit slots. */
 export function syncTrees(g: GameState, ctx: SimContext): void {
-  const trees = slotsOf(ctx.stats.treeCount);
+  const total = HOME_TREE_SLOTS + GROVE_TREE_SLOTS;
   const slots = slotsOf(ctx.stats.fruitSlots);
-  while (g.trees.length < trees) g.trees.push([]);
-  if (g.trees.length > trees) g.trees.length = trees;
-  for (const tree of g.trees) {
-    while (tree.length < slots) {
+  while (g.trees.length < total) g.trees.push([]);
+  if (g.trees.length > total) g.trees.length = total;
+  g.trees.forEach((tree, i) => {
+    const want = treeSlotActive(i, ctx.stats) ? slots : 0;
+    while (tree.length < want) {
       const f = newFruit(ctx);
       f.g = ctx.rng() * 0.5;
       tree.push(f);
     }
-    if (tree.length > slots) tree.length = slots;
-  }
+    if (tree.length > want) tree.length = want;
+  });
+}
+
+function lemonBonus(g: GameState, ctx: SimContext, f: Fruit): number {
+  const drink = baseDrinkValue(g, ctx.stats, ctx.now);
+  if (f.diamond) return drink * TUNING.diamondValueDrinks;
+  if (f.golden) return drink * TUNING.goldenValueDrinks;
+  return 0;
+}
+
+/** Sell every lemon in the basket at the Sell Crate. Returns coins earned. */
+export function sellLemons(g: GameState, ctx: SimContext, by: Actor): number {
+  if ((g.upgrades.sell_crate ?? 0) <= 0 || g.lemons <= 0) return 0;
+  const count = g.lemons;
+  const amount = addCoins(g, count * rawLemonValue(g, ctx.stats, ctx.now));
+  g.lemons = 0;
+  g.run.lemonsSold += count;
+  g.lifetime.lemonsSold += count;
+  ctx.emit({ type: "sell", count, amount, by });
+  return amount;
 }
 
 export function waitingCustomers(s: SessionState): Customer[] {
@@ -84,20 +115,34 @@ function frontCustomer(s: SessionState): Customer | undefined {
 export function harvestFruit(g: GameState, ctx: SimContext, tree: number, fruit: number, by: Actor): boolean {
   const f = g.trees[tree]?.[fruit];
   if (!f || f.g < 1) return false;
-  if (g.lemons >= slotsOf(ctx.stats.basketCap)) {
+  const full = g.lemons >= slotsOf(ctx.stats.basketCap);
+  // With the Lemon Chute, a full basket no longer stops picking: the extra lemon sells itself.
+  const chute = full && ctx.stats.autoSell >= 1 && (g.upgrades.sell_crate ?? 0) > 0;
+  if (full && !chute) {
     ctx.emit({ type: "basketFull" });
     return false;
   }
   let bonus = 0;
-  if (f.golden) {
-    bonus = addCoins(g, baseDrinkValue(g, ctx.stats, ctx.now) * TUNING.goldenValueDrinks);
-    g.run.goldenHarvested++;
-    g.lifetime.goldenHarvested++;
+  if (f.golden || f.diamond) {
+    bonus = addCoins(g, lemonBonus(g, ctx, f));
+    if (f.diamond) {
+      g.run.diamondHarvested++;
+      g.lifetime.diamondHarvested++;
+    } else {
+      g.run.goldenHarvested++;
+      g.lifetime.goldenHarvested++;
+    }
   }
-  g.lemons++;
+  if (chute) {
+    bonus += addCoins(g, rawLemonValue(g, ctx.stats, ctx.now));
+    g.run.lemonsSold++;
+    g.lifetime.lemonsSold++;
+  } else {
+    g.lemons++;
+  }
   g.run.lemonsHarvested++;
   g.lifetime.lemonsHarvested++;
-  ctx.emit({ type: "harvest", tree, fruit, golden: f.golden, bonus, by });
+  ctx.emit({ type: "harvest", tree, fruit, golden: f.golden, diamond: !!f.diamond, bonus, by, sold: chute });
   g.trees[tree][fruit] = newFruit(ctx);
   return true;
 }
@@ -118,8 +163,8 @@ export function harvestTree(g: GameState, ctx: SimContext, tree: number): number
 export function harvestAny(g: GameState, ctx: SimContext, by: Actor): boolean {
   for (let t = 0; t < g.trees.length; t++) {
     const fruits = g.trees[t];
-    // Prefer golden lemons, then any ripe one.
-    let idx = fruits.findIndex((f) => f.g >= 1 && f.golden);
+    // Prefer diamond and golden lemons, then any ripe one.
+    let idx = fruits.findIndex((f) => f.g >= 1 && (f.golden || f.diamond));
     if (idx < 0) idx = fruits.findIndex((f) => f.g >= 1);
     if (idx >= 0) return harvestFruit(g, ctx, t, idx, by);
   }
@@ -315,6 +360,18 @@ function stepOnce(g: GameState, s: SessionState, dt: number, ctx: SimContext): v
     }
   }
   s.customers = s.customers.filter((c) => !(c.phase === "leaving" && c.x > LAYOUT.exitX));
+
+  // Lemonade Fountain: passive coins, paid out in small lumps.
+  if (st.passiveIncome > 0) {
+    s.fountainBank += fountainPerSec(g, st, ctx.now) * dt;
+    s.fountainTimer += dt;
+    if (s.fountainTimer >= TUNING.fountainInterval) {
+      s.fountainTimer = 0;
+      const amount = addCoins(g, s.fountainBank);
+      s.fountainBank = 0;
+      if (amount > 0) ctx.emit({ type: "fountain", amount });
+    }
+  }
 
   // Delivery cart sells spare drinks when nobody is waiting at the counter.
   if (st.deliveryRate > 0 && g.drinks > 0 && !frontCustomer(s)) {

@@ -1,8 +1,27 @@
 // Renderer: composes the lane scene each frame from game state. Read-only with respect to state.
-import { COSMETICS, customerById, helperById, recipeById } from "../content/content";
-import type { HelperId, RegionId } from "../content/types";
-import { activeRecipe, slotsOf, type StatBlock } from "../core/economy";
-import { GROUND_Y, LAYOUT, WORLD_H, WORLD_W } from "../core/layout";
+import { COSMETICS, FACILITY_IDS, WHEEL, customerById, helperById, recipeById, upgradeById } from "../content/content";
+import type { HelperId, RegionId, UpgradeId } from "../content/types";
+import { upgradeLocked } from "../core/actions";
+import { activeRecipe, rawLemonValue, slotsOf, upgradeCost, type StatBlock } from "../core/economy";
+import { FACILITY_SPOTS, GROUND_Y, GROVE_TREES, LAYOUT, WORLD_H, WORLD_W, treeSpot, zoneLeft, type FacilitySpotId } from "../core/layout";
+import { spinCooldownLeft } from "../core/wheel";
+import { HOME_TREE_SLOTS } from "../core/state";
+import {
+  drawBeehive,
+  drawChute,
+  drawConstruction,
+  drawEmptyPlot,
+  drawFactory,
+  drawFairBackdrop,
+  drawFountain,
+  drawGroveBackdrop,
+  drawMarketBackdrop,
+  drawSellCrate,
+  drawSprinkler,
+  drawStatue,
+  drawWheel,
+  type BuildState,
+} from "./drawWorld";
 import type { GameState, SessionState } from "../core/state";
 import { nameOf } from "../content/strings";
 import {
@@ -38,7 +57,11 @@ import {
 import { C } from "./palette";
 import { formatNumber } from "../ui/format";
 
-export type Hit = { kind: "tree"; index: number } | { kind: "press" } | { kind: "serve" };
+export type Hit =
+  | { kind: "tree"; index: number }
+  | { kind: "press" }
+  | { kind: "serve" }
+  | { kind: "facility"; id: UpgradeId };
 
 interface Particle {
   kind: "text" | "lemon" | "sparkle";
@@ -101,6 +124,13 @@ export class Renderer {
   private cssH = 1;
   private dpr = 1;
   private particles: Particle[] = [];
+  /** Camera: world x of the view's left edge, eased toward camTarget. */
+  private camX = 0;
+  private camTarget = 0;
+  private wheelAngle = 0;
+  private wheelFrom = 0;
+  private wheelTo = 0;
+  private wheelT = 1;
 
   constructor(private canvas: HTMLCanvasElement) {
     const ctx = canvas.getContext("2d");
@@ -122,18 +152,58 @@ export class Renderer {
   }
 
   toWorld(cssX: number, cssY: number): { x: number; y: number } {
-    return { x: (cssX - this.ox) / this.scale, y: (cssY - this.oy) / this.scale };
+    return { x: (cssX - this.ox) / this.scale + this.camX, y: (cssY - this.oy) / this.scale };
+  }
+
+  /** Move the camera to a zone slot (home = 0). */
+  setZone(index: number, snap = false): void {
+    this.camTarget = zoneLeft(index);
+    if (snap) this.camX = this.camTarget;
+  }
+
+  private updateCamera(dt: number, reduced: boolean): void {
+    const d = this.camTarget - this.camX;
+    if (reduced || Math.abs(d) < 0.5) this.camX = this.camTarget;
+    else this.camX += d * Math.min(1, dt * 7);
+  }
+
+  /** Spin the Lucky Wheel so `segment` ends under the pointer. */
+  spinWheel(segment: number, reduced: boolean): void {
+    const n = WHEEL.length;
+    const target = -(segment / n) * Math.PI * 2;
+    const base = this.wheelAngle - (this.wheelAngle % (Math.PI * 2));
+    this.wheelFrom = this.wheelAngle;
+    this.wheelTo = base - Math.PI * 2 * 5 + target;
+    this.wheelT = reduced ? 1 : 0;
+    if (reduced) this.wheelAngle = this.wheelTo;
+  }
+
+  private updateWheel(dt: number): void {
+    if (this.wheelT >= 1) return;
+    this.wheelT = Math.min(1, this.wheelT + dt / 2.6);
+    const e = 1 - Math.pow(1 - this.wheelT, 3);
+    this.wheelAngle = this.wheelFrom + (this.wheelTo - this.wheelFrom) * e;
   }
 
   hitTest(cssX: number, cssY: number, g: GameState): Hit | null {
     const { x, y } = this.toWorld(cssX, cssY);
+    // Facilities (built or not) and the next grove plot
+    for (const id of FACILITY_IDS) {
+      const f = FACILITY_SPOTS[id as FacilitySpotId];
+      if (f && x > f.x - f.w / 2 && x < f.x + f.w / 2 && y > f.y - f.h && y < f.y + 10) return { kind: "facility", id };
+    }
+    const nextPlot = slotsOf(this.lastStats?.grovePlots ?? 0);
+    const plot = GROVE_TREES[nextPlot];
+    if (plot && (g.upgrades.grove_plot ?? 0) < (upgradeById.get("grove_plot")?.maxLevel ?? 0) && Math.abs(x - plot.x) < 70 && y > plot.y - 170 && y < plot.y + 20) {
+      return { kind: "facility", id: "grove_plot" };
+    }
     // Press
     const p = LAYOUT.press;
     if (x > p.x - 62 && x < p.x + 70 && y > p.y - 160 && y < p.y + 10) return { kind: "press" };
     // Trees (front-most first)
     for (let i = 0; i < g.trees.length; i++) {
-      const tr = LAYOUT.trees[i];
-      if (!tr) continue;
+      if (!g.trees[i]?.length) continue;
+      const tr = treeSpot(i);
       const cx = tr.x;
       const cy = tr.y - 175 * tr.scale;
       const r = 115 * tr.scale;
@@ -142,12 +212,12 @@ export class Renderer {
     }
     // Stand + queue
     const st = LAYOUT.stand;
-    if (x > st.x - st.w / 2 && x < WORLD_W && y > GROUND_Y - 300 && y < GROUND_Y + 90) return { kind: "serve" };
+    if (x > st.x - st.w / 2 && x < WORLD_W + 20 && y > GROUND_Y - 300 && y < GROUND_Y + 90) return { kind: "serve" };
     return null;
   }
 
   fruitWorldPos(g: GameState, tree: number, fruit: number): { x: number; y: number } {
-    const tr = LAYOUT.trees[tree] ?? LAYOUT.trees[0];
+    const tr = treeSpot(tree);
     const s = tr.scale * this.treeScale(g);
     const [fx, fy] = FRUIT_SPOTS[fruit % FRUIT_SPOTS.length];
     return { x: tr.x + fx * s, y: tr.y + fy * s };
@@ -195,11 +265,17 @@ export class Renderer {
   // -------------------------------------------------------------------------
   // Frame
 
-  render(g: GameState, s: SessionState, stats: StatBlock, x: ViewExtras, dt: number): void {
+  private lastStats: StatBlock | null = null;
+
+  render(g: GameState, s: SessionState, stats: StatBlock, x: ViewExtras, dt: number, realDt = dt): void {
     const ctx = this.ctx;
     const motion = !x.reducedMotion;
     const time = s.time;
+    this.lastStats = stats;
     this.updateParticles(dt);
+    this.updateCamera(realDt, x.reducedMotion);
+    this.updateWheel(realDt);
+    const camX = this.camX;
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, this.cssW, this.cssH);
     ctx.setTransform(this.dpr * this.scale, 0, 0, this.dpr * this.scale, this.dpr * this.ox, this.dpr * this.oy);
@@ -247,16 +323,28 @@ export class Renderer {
     // Clouds
     for (let i = 0; i < 4; i++) {
       const span = WORLD_W + 400;
-      const cx = (((i * 330 + (motion ? time * (8 + i * 3) : 0)) % span) + span) % span - 200;
+      const cx = (((i * 330 + (motion ? time * (8 + i * 3) : 0) - camX * 0.25) % span) + span) % span - 200;
       drawCloud(ctx, cx, 70 + (i % 2) * 60 + i * 8, 0.8 + (i % 3) * 0.25);
     }
 
-    // Far hills
+    // Far hills (parallax, tiled)
+    ctx.save();
+    const px = camX * 0.5;
+    ctx.translate(-px, 0);
     ctx.fillStyle = "#CDEBB5";
-    ellipse(ctx, 300, GROUND_Y - 20, 520, 170);
-    ctx.fill();
-    ellipse(ctx, 950, GROUND_Y - 10, 560, 150);
-    ctx.fill();
+    for (let k = Math.floor((wx0 + px) / WORLD_W) - 1; k <= Math.ceil((wx1 + px) / WORLD_W); k++) {
+      ellipse(ctx, 300 + k * WORLD_W, GROUND_Y - 20, 520, 170);
+      ctx.fill();
+      ellipse(ctx, 950 + k * WORLD_W, GROUND_Y - 10, 560, 150);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // Everything below scrolls with the camera.
+    ctx.translate(-camX, 0);
+    const vx0 = wx0 + camX;
+    const vx1 = wx1 + camX;
+    const visible = (lo: number, hi: number) => hi >= vx0 && lo <= vx1;
     // Orchard hill (left)
     ellipse(ctx, 440, GROUND_Y - 60, 200, 110);
     ctx.fillStyle = has("orchard_hill") ? "#B5E09A" : "#D7EEC6";
@@ -265,12 +353,12 @@ export class Renderer {
     // Riverside
     if (has("riverside")) {
       ctx.fillStyle = C.skyDeep;
-      rrPath(ctx, wx0, GROUND_Y - 118, wx1 - wx0, 26, 13);
+      rrPath(ctx, vx0, GROUND_Y - 118, vx1 - vx0, 26, 13);
       ctx.fill();
       ctx.strokeStyle = C.white;
       ctx.lineWidth = 2;
       for (let i = 0; i < 12; i++) {
-        const rx = ((i * 110 + (motion ? time * 20 : 0)) % (WORLD_W + 100)) - 50;
+        const rx = ((i * 110 + (motion ? time * 20 : 0)) % (WORLD_W + 100)) - 50 + Math.floor(camX / WORLD_W) * WORLD_W;
         ctx.beginPath();
         ctx.moveTo(rx, GROUND_Y - 105);
         ctx.lineTo(rx + 24, GROUND_Y - 105);
@@ -290,7 +378,7 @@ export class Renderer {
       drawHouse(ctx, 1110, GROUND_Y - 64, 80, 64, C.white, C.skyDeep);
     }
     drawHouse(ctx, 520, GROUND_Y - 70, 76, 60, C.white, C.leaf);
-    if (has("sunny_lane")) drawFence(ctx, wx0, 385, GROUND_Y - 38);
+    if (has("sunny_lane")) drawFence(ctx, -30, 385, GROUND_Y - 38);
 
     // Sunset Plaza lanterns / Moonlit Market lanterns
     if (has("sunset_plaza") || night) {
@@ -309,20 +397,25 @@ export class Renderer {
       }
     }
 
+    // Zone backdrops that stand behind the ground line
+    if (visible(-WORLD_W, 0)) drawGroveBackdrop(ctx);
+
     // Ground
     ctx.fillStyle = "#9BD58A";
-    ctx.fillRect(wx0, GROUND_Y - 40, wx1 - wx0, wy1 - (GROUND_Y - 40));
+    ctx.fillRect(vx0, GROUND_Y - 40, vx1 - vx0, wy1 - (GROUND_Y - 40));
     ctx.fillStyle = C.leaf;
-    ctx.fillRect(wx0, GROUND_Y - 40, wx1 - wx0, 6);
+    ctx.fillRect(vx0, GROUND_Y - 40, vx1 - vx0, 6);
     ctx.fillStyle = C.sand;
-    ctx.fillRect(wx0, GROUND_Y + 8, wx1 - wx0, 62);
+    ctx.fillRect(vx0, GROUND_Y + 8, vx1 - vx0, 62);
     ctx.fillStyle = "rgba(167,116,79,0.18)";
-    for (let px = Math.floor(wx0 / 60) * 60; px < wx1; px += 60) {
-      rrPath(ctx, px + 8, GROUND_Y + 30, 26, 8, 4);
+    for (let px2 = Math.floor(vx0 / 60) * 60; px2 < vx1; px2 += 60) {
+      rrPath(ctx, px2 + 8, GROUND_Y + 30, 26, 8, 4);
       ctx.fill();
     }
+    if (visible(WORLD_W, 2 * WORLD_W)) drawMarketBackdrop(ctx, time, motion);
+    if (visible(2 * WORLD_W, 3 * WORLD_W)) drawFairBackdrop(ctx, time, motion);
 
-    if ((g.perks.evergreen_lane ?? 0) > 0) drawHedge(ctx, wx0 + 10, 520, GROUND_Y - 20);
+    if ((g.perks.evergreen_lane ?? 0) > 0) drawHedge(ctx, -20, 520, GROUND_Y - 20);
 
     // Picnic Corner
     if (has("picnic_corner")) {
@@ -333,11 +426,14 @@ export class Renderer {
     // Next region preview (signposts that stand behind the lane)
     this.drawRegionSign(x, false);
 
-    // Trees: extra trees first (farther back), main tree last
+    // Grove plots: planted trees, empty mounds, and the next plot's build sign (back row first)
+    if (visible(-WORLD_W - 100, 100)) this.drawGrove(g, stats, x, time, motion);
+
+    // Stand trees: extra trees first (farther back), main tree last
     const tScale = this.treeScale(g);
-    for (let i = g.trees.length - 1; i >= 0; i--) {
-      const tr = LAYOUT.trees[i];
-      if (!tr) continue;
+    for (let i = HOME_TREE_SLOTS - 1; i >= 0; i--) {
+      if (!g.trees[i]?.length) continue;
+      const tr = treeSpot(i);
       drawTree(ctx, tr.x, tr.y, tr.scale * tScale, g.trees[i], time, motion, x.treeShake[i] ?? 0);
     }
 
@@ -413,12 +509,15 @@ export class Renderer {
       drawCart(ctx, 1110 + offset, GROUND_Y + 110, cartLv, time, moving, motion);
     }
 
+    // Facilities in the other zones
+    this.drawFacilities(g, stats, x, time, motion, visible);
+
     // Customers (back to front)
     const customers = [...s.customers].sort((a, b) => b.x - a.x);
     for (const c of customers) {
       const def = customerById.get(c.type)!;
       const walking = c.phase === "arriving" || c.phase === "leaving";
-      drawCustomer(ctx, c.x, LAYOUT.customerY, def, c.mood, c.t + c.uid, walking, motion, CUSTOMER_SCALE);
+      drawCustomer(ctx, c.x, LAYOUT.customerY, def, c.mood, c.t + c.uid, walking, motion, CUSTOMER_SCALE, c.uid);
       if (c.phase === "waiting") this.drawOrderBubble(c.x, LAYOUT.customerY - 128, c.owed, c.patience / c.patienceMax, c.premium, recipe.id);
       if (c.phase === "served" || (c.phase === "leaving" && c.mood !== "sad" && c.t < 0.8)) {
         const rise = motion ? c.t * 20 : 0;
@@ -479,6 +578,84 @@ export class Renderer {
         ctx.fillStyle = p.color;
         ctx.fill();
         ctx.globalAlpha = 1;
+      }
+    }
+  }
+
+  private buildState(g: GameState, stats: StatBlock, id: UpgradeId): BuildState {
+    if (upgradeLocked(g, id)) return "locked";
+    return g.coins >= upgradeCost(g, id, stats) ? "affordable" : "saving";
+  }
+
+  private constructionFor(g: GameState, stats: StatBlock, id: UpgradeId, cx: number, cy: number, w: number, h: number, time: number, motion: boolean): void {
+    const state = this.buildState(g, stats, id);
+    const def = upgradeById.get(id)!;
+    const line2 = state === "locked" ? `Opens with ${nameOf("region", def.region)}` : `Build · ${formatNumber(upgradeCost(g, id, stats))}`;
+    drawConstruction(this.ctx, cx, cy, w, h, nameOf("upgrade", id), line2, state, time, motion);
+  }
+
+  private drawGrove(g: GameState, stats: StatBlock, x: ViewExtras, time: number, motion: boolean): void {
+    const ctx = this.ctx;
+    const planted = slotsOf(stats.grovePlots);
+    const tScale = this.treeScale(g);
+    // Back row (odd slots) then front row (even slots)
+    for (const row of [1, 0]) {
+      for (let j = 0; j < GROVE_TREES.length; j++) {
+        if (j % 2 !== row) continue;
+        const spot = GROVE_TREES[j];
+        const idx = HOME_TREE_SLOTS + j;
+        if (j < planted && g.trees[idx]?.length) {
+          drawTree(ctx, spot.x, spot.y, spot.scale * tScale, g.trees[idx], time, motion, x.treeShake[idx] ?? 0);
+        } else {
+          drawEmptyPlot(ctx, spot.x, spot.y, spot.scale, j === planted, time, motion);
+        }
+      }
+    }
+    const next = GROVE_TREES[planted];
+    if (next && (g.upgrades.grove_plot ?? 0) < (upgradeById.get("grove_plot")?.maxLevel ?? 0)) {
+      this.constructionFor(g, stats, "grove_plot", next.x, next.y + 10, 150, 200, time, motion);
+    }
+  }
+
+  private drawFacilities(g: GameState, stats: StatBlock, x: ViewExtras, time: number, motion: boolean, visible: (lo: number, hi: number) => boolean): void {
+    const ctx = this.ctx;
+    const recipe = activeRecipe(g);
+    for (const id of FACILITY_IDS) {
+      const f = FACILITY_SPOTS[id as FacilitySpotId];
+      if (!f || !visible(f.x - f.w, f.x + f.w)) continue;
+      const lv = g.upgrades[id] ?? 0;
+      if (lv <= 0) {
+        this.constructionFor(g, stats, id, f.x, f.y, f.w, f.h, time, motion);
+        continue;
+      }
+      switch (id) {
+        case "beehive":
+          drawBeehive(ctx, f.x, f.y, lv, time, motion);
+          break;
+        case "sprinkler":
+          drawSprinkler(ctx, f.x, f.y, lv, time, motion);
+          break;
+        case "sell_crate":
+          drawSellCrate(ctx, f.x, f.y, lv, g.lemons, `+${formatNumber(rawLemonValue(g, stats, x.now))} each`, time, motion);
+          break;
+        case "lemon_chute":
+          drawChute(ctx, f.x, f.y, time, motion);
+          break;
+        case "juice_factory":
+          drawFactory(ctx, f.x, f.y, lv, g.lemons >= recipe.lemons, recipe, time, motion);
+          break;
+        case "fountain":
+          drawFountain(ctx, f.x, f.y, lv, time, motion);
+          break;
+        case "lucky_wheel": {
+          const left = spinCooldownLeft(g, stats, x.now);
+          drawWheel(ctx, f.x, f.y, WHEEL, this.wheelAngle, left <= 0 && this.wheelT >= 1, time, motion);
+          label(ctx, left <= 0 ? "SPIN!" : `${Math.floor(left / 60)}:${String(Math.floor(left % 60)).padStart(2, "0")}`, f.x, f.y - 19, 17, C.cocoa);
+          break;
+        }
+        case "golden_statue":
+          drawStatue(ctx, f.x, f.y, lv, time, motion);
+          break;
       }
     }
   }

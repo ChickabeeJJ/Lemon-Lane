@@ -11,12 +11,13 @@ import {
   REGIONS,
   TUNING,
   UPGRADES,
+  ZONES,
   helperById,
   regionById,
   upgradeById,
 } from "../content/content";
 import { descOf, nameOf, t } from "../content/strings";
-import type { Effect, HelperId, PerkId, RecipeId, RegionId, StatId, UpgradeId } from "../content/types";
+import type { Effect, HelperId, PerkId, RecipeId, RegionId, StatId, UpgradeId, ZoneId } from "../content/types";
 import {
   cosmeticUnlocked,
   dailyAvailable,
@@ -82,6 +83,12 @@ function img(src: string, alt = ""): HTMLImageElement {
 const pct = (v: number) => `${Math.round(v * 100)}%`;
 const mult = (v: number) => `×${v.toFixed(2)}`;
 const STAT_FMT: Record<StatId, (v: number) => string> = {
+  grovePlots: (v) => String(slotsOf(v)),
+  diamondChance: (v) => `${(v * 100).toFixed(2)}%`,
+  lemonPrice: mult,
+  autoSell: (v) => (v >= 1 ? "On" : "Off"),
+  passiveIncome: (v) => v.toFixed(0),
+  wheelCooldown: (v) => `${Math.round(v / 60)}m`,
   growthSpeed: mult,
   fruitSlots: (v) => String(slotsOf(v)),
   goldenChance: pct,
@@ -159,6 +166,11 @@ export class UI implements GameHooks {
   private actSqueeze!: HTMLButtonElement;
   private actServe!: HTMLButtonElement;
   private actRush!: HTMLButtonElement;
+  private actSell!: HTMLButtonElement;
+  private arrowLeft!: HTMLButtonElement;
+  private arrowRight!: HTMLButtonElement;
+  private zoneBanner!: HTMLElement;
+  private zoneDots = new Map<ZoneId, HTMLElement>();
   private modalOpen = 0;
   private lastRefresh = 0;
   private game!: Game;
@@ -235,15 +247,31 @@ export class UI implements GameHooks {
     ]);
 
     this.toasts = el("div", { id: "toasts", "aria-live": "polite" });
-    this.stage.append(hud, this.goal, this.toasts);
+
+    // Walking between zones
+    this.arrowLeft = el("button", { class: "nav-arrow left", "aria-label": "Walk left" });
+    this.arrowRight = el("button", { class: "nav-arrow right", "aria-label": "Walk right" });
+    this.arrowLeft.addEventListener("click", () => this.game.walk(-1));
+    this.arrowRight.addEventListener("click", () => this.game.walk(1));
+    this.zoneBanner = el("div", { class: "zone-banner", "aria-live": "polite" });
+    const map = el("div", { class: "zone-map", role: "navigation", "aria-label": "Zones" });
+    for (const z of [...ZONES].sort((a, b) => a.index - b.index)) {
+      const d = el("button", { class: "zone-dot", title: t(`zone.${z.id}.name`), "aria-label": t(`zone.${z.id}.name`) });
+      d.addEventListener("click", () => this.game.goZone(z.index));
+      this.zoneDots.set(z.id, d);
+      map.append(d);
+    }
+    this.stage.append(hud, this.goal, this.toasts, this.arrowLeft, this.arrowRight, this.zoneBanner, map);
 
     // Dock: action buttons + tabs
     this.actPick = this.actionButton(lemonIcon(), "Pick", "Space", () => this.game.pick());
     this.actSqueeze = this.actionButton(recipeIcon("classic"), "Squeeze", "S", () => this.game.squeeze());
     this.actServe = this.actionButton(customerIcon("mochi_cat"), "Serve", "E", () => this.game.serve());
+    this.actSell = el("button", { class: "btn white", hidden: true, "aria-keyshortcuts": "Q" }, [img(upgradeIcon("sell_crate")), el("span", { class: "sell-label", text: t("ui.sell") }), el("span", { class: "key", text: "Q" })]);
+    this.actSell.addEventListener("click", () => this.game.sell());
     this.actRush = el("button", { class: "btn ad", hidden: !this.game.platform.adsAvailable }, [el("span", { class: "ad-badge", text: t("ui.adBadge") }), t("ui.burstDesc")]);
     this.actRush.addEventListener("click", () => void this.game.requestRush());
-    const actions = el("div", { class: "actions" }, [this.actPick, this.actSqueeze, this.actServe, this.actRush]);
+    const actions = el("div", { class: "actions" }, [this.actPick, this.actSqueeze, this.actServe, this.actSell, this.actRush]);
 
     const tabs = el("div", { class: "tabs", role: "tablist" });
     const tabIcons: Record<TabId, string> = {
@@ -312,6 +340,14 @@ export class UI implements GameHooks {
       this.game.pick();
     } else if (k === "s") this.game.squeeze();
     else if ((k === "e" || (k === "enter" && !onButton))) this.game.serve();
+    else if (k === "q") this.game.sell();
+    else if (k === "arrowleft" || k === "a") {
+      e.preventDefault();
+      this.game.walk(-1);
+    } else if (k === "arrowright" || k === "d") {
+      e.preventDefault();
+      this.game.walk(1);
+    }
     else if (/^[1-7]$/.test(k)) this.toggleTab(TABS[Number(k) - 1]);
   }
 
@@ -330,6 +366,52 @@ export class UI implements GameHooks {
       this.panelBody.scrollTop = 0;
     }
     this.game.audio.play("click");
+  }
+
+  zoneChanged(zone: ZoneId): void {
+    this.updateArrows();
+    this.zoneBanner.textContent = t(`zone.${zone}.name`);
+    this.zoneBanner.classList.remove("show");
+    void this.zoneBanner.offsetWidth;
+    this.zoneBanner.classList.add("show");
+  }
+
+  private zoneAt(index: number): ZoneId | undefined {
+    return ZONES.find((z) => z.index === index)?.id;
+  }
+
+  /** Something buildable/affordable waiting in a zone? */
+  private zoneHasNews(zone: ZoneId): boolean {
+    const g = this.game.g;
+    return UPGRADES.some(
+      (u) => u.zone === zone && u.zone !== "home" && !upgradeLocked(g, u.id) && (g.upgrades[u.id] ?? 0) === 0 && g.coins >= upgradeCost(g, u.id, this.game.stats),
+    ) || (zone === "fair" && this.game.wheelOwned() && this.game.spinReadyIn() <= 0) || (zone === "grove" && !upgradeLocked(g, "grove_plot") && (g.upgrades.grove_plot ?? 0) < 6 && g.coins >= upgradeCost(g, "grove_plot", this.game.stats));
+  }
+
+  private updateArrows(): void {
+    const i = this.game.zoneIndex;
+    const left = this.zoneAt(i - 1);
+    const right = this.zoneAt(i + 1);
+    const setArrow = (btn: HTMLButtonElement, zone: ZoneId | undefined, dir: "◀" | "▶") => {
+      btn.hidden = !zone;
+      if (!zone) return;
+      const name = t(`zone.${zone}.name`);
+      const news = this.zoneHasNews(zone) || (dir === "▶" ? this.newsBeyond(i + 1, 1) : this.newsBeyond(i - 1, -1));
+      const label = dir === "◀" ? `${dir} ${name}` : `${name} ${dir}`;
+      const sig = `${label}|${news}`;
+      if (btn.dataset.sig === sig) return;
+      btn.dataset.sig = sig;
+      btn.replaceChildren(el("span", { class: "arrow-glyph", text: dir }), el("span", { class: "arrow-name", text: name }), news ? el("span", { class: "dot", text: "!" }) : "");
+      btn.setAttribute("aria-label", `Walk to ${name}`);
+    };
+    setArrow(this.arrowLeft, left, "◀");
+    setArrow(this.arrowRight, right, "▶");
+    for (const [id, d] of this.zoneDots) d.setAttribute("aria-current", String(id === this.game.zoneId()));
+  }
+
+  private newsBeyond(start: number, dir: number): boolean {
+    for (let i = start; this.zoneAt(i); i += dir) if (this.zoneHasNews(this.zoneAt(i)!)) return true;
+    return false;
   }
 
   structureChanged(): void {
@@ -445,13 +527,27 @@ export class UI implements GameHooks {
   }
 
   private buildUpgrades(body: HTMLElement): void {
+    for (const zone of [...ZONES].sort((a, b) => (a.id === "home" ? -1 : b.id === "home" ? 1 : a.index - b.index))) {
+      const go = el("button", { class: "btn small white", text: this.game.zoneId() === zone.id ? t("ui.here") : `${t("ui.goThere")} ${zone.index < this.game.zoneIndex ? "◀" : "▶"}` });
+      go.disabled = this.game.zoneId() === zone.id;
+      go.addEventListener("click", () => {
+        this.game.goZone(zone.index);
+        this.structureChanged();
+      });
+      body.append(el("div", { class: "section-row" }, [el("h3", { class: "section-title", text: t(`zone.${zone.id}.name`) }), go]));
+      this.buildUpgradeRows(body, UPGRADES.filter((u) => u.zone === zone.id));
+    }
+  }
+
+  private buildUpgradeRows(body: HTMLElement, defs: typeof UPGRADES): void {
     const g = () => this.game.g;
     const locked: RegionId[] = [];
-    for (const def of [...UPGRADES].sort((a, b) => a.sort - b.sort)) {
+    for (const def of [...defs].sort((a, b) => a.sort - b.sort)) {
       if (upgradeLocked(g(), def.id)) {
         if (!locked.includes(def.region)) locked.push(def.region);
         continue;
       }
+      const isBuild = def.zone !== "home" && def.id !== "grove_plot";
       body.append(
         this.row({
           icon: upgradeIcon(def.id),
@@ -463,16 +559,17 @@ export class UI implements GameHooks {
             label: () => {
               const lv = g().upgrades[def.id] ?? 0;
               if (lv >= def.maxLevel) return t("ui.max");
-              return this.costLabel(upgradeCost(g(), def.id, this.game.stats), g().coins, t("ui.buy"));
+              return this.costLabel(upgradeCost(g(), def.id, this.game.stats), g().coins, isBuild && lv === 0 ? t("ui.build") : t("ui.buy"));
             },
             enabled: () => (g().upgrades[def.id] ?? 0) < def.maxLevel && g().coins >= upgradeCost(g(), def.id, this.game.stats),
             onClick: () => this.game.buyUpgrade(def.id),
+            cls: isBuild && (g().upgrades[def.id] ?? 0) === 0 ? "green" : "",
           },
         }),
       );
     }
     for (const r of locked) {
-      const names = UPGRADES.filter((u) => u.region === r).map((u) => nameOf("upgrade", u.id)).join(", ");
+      const names = defs.filter((u) => u.region === r).map((u) => nameOf("upgrade", u.id)).join(", ");
       body.append(el("div", { class: "note", text: `${t("ui.lockedRegion", { ref: nameOf("region", r) })}: ${names}` }));
     }
   }
@@ -681,11 +778,35 @@ export class UI implements GameHooks {
     body.append(el("div", { class: "row" }, [img(upgradeIcon("basket")), el("div", { class: "row-title", text: t("ui.daily") }), dailyText, el("div", { class: "row-actions" }, [dailyBtn])]));
     (body.lastElementChild!.firstChild as HTMLElement).className = "row-icon";
 
+    // Lucky Wheel
+    const wheelText = el("div", { class: "row-desc" });
+    const wheelBtn = el("button", { class: "btn coral" });
+    wheelBtn.addEventListener("click", () => {
+      if (this.game.wheelOwned()) {
+        this.game.goZone(2);
+        this.game.spin();
+      } else this.game.goToZoneOf("lucky_wheel");
+    });
+    this.refreshers.push(() => {
+      if (!this.game.wheelOwned()) {
+        wheelText.textContent = descOf("upgrade", "lucky_wheel");
+        wheelBtn.textContent = `${t("ui.goThere")} ▶`;
+        wheelBtn.disabled = false;
+        return;
+      }
+      const left = this.game.spinReadyIn();
+      wheelText.textContent = left <= 0 ? t("ui.spinReady") : t("ui.spinIn", { t: formatDuration(left) });
+      wheelBtn.textContent = t("ui.spin");
+      wheelBtn.disabled = left > 0;
+    });
+    body.append(el("div", { class: "row" }, [img(upgradeIcon("lucky_wheel")), el("div", { class: "row-title", text: nameOf("upgrade", "lucky_wheel") }), wheelText, el("div", { class: "row-actions" }, [wheelBtn])]));
+    (body.lastElementChild!.firstChild as HTMLElement).className = "row-icon";
+
     const lifetime = g().lifetime;
     body.append(
       el("div", {
         class: "note",
-        text: `Lifetime: ${formatNumber(lifetime.lemonsHarvested)} lemons picked · ${formatNumber(lifetime.customersServed)} customers served · ${formatNumber(lifetime.coinsEarned)} coins · best combo ×${lifetime.bestCombo}`,
+        text: `Lifetime: ${formatNumber(lifetime.lemonsHarvested)} lemons picked · ${formatNumber(lifetime.customersServed)} customers served · ${formatNumber(lifetime.coinsEarned)} coins · best combo ×${lifetime.bestCombo} · ${formatNumber(lifetime.lemonsSold)} lemons sold · ${lifetime.diamondHarvested} diamond lemons`,
       }),
     );
   }
@@ -753,10 +874,14 @@ export class UI implements GameHooks {
     this.actPick.disabled = !this.game.canPick();
     this.actSqueeze.disabled = !this.game.canSqueeze();
     this.actServe.disabled = !this.game.canServe();
+    const crate = (g.upgrades.sell_crate ?? 0) > 0;
+    this.actSell.hidden = !crate;
+    if (crate) this.actSell.disabled = !this.game.canSell();
   }
 
   private refreshSlow(force = false): void {
     const g = this.game.g;
+    this.updateArrows();
     this.hudRate.textContent = `+${formatNumber(this.game.incomePerSec())}${t("ui.perSec")}`;
     this.hudTokensPill.hidden = g.sunnyTokens <= 0 && g.sunrises === 0;
     this.hudTokens.textContent = formatNumber(g.sunnyTokens);
@@ -784,7 +909,7 @@ export class UI implements GameHooks {
     this.goalHint.hidden = !this.goalHint.textContent;
 
     // Tab dots: something affordable / claimable
-    this.setDot("goals", q.done || dailyAvailable(g, Date.now()));
+    this.setDot("goals", q.done || dailyAvailable(g, Date.now()) || (this.game.wheelOwned() && this.game.spinReadyIn() <= 0));
     this.setDot("sunrise", sunriseTokens(g, this.game.stats) > 0 || PERKS.some((p) => (g.perks[p.id] ?? 0) < p.maxLevel && g.sunnyTokens >= perkCost(g, p.id)));
     this.setDot("lane", (() => {
       const nr = nextRegion(g);

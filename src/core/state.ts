@@ -2,12 +2,18 @@
 // that is rebuilt on every load and never saved.
 import type { CosmeticId, CustomerId, HelperId, PerkId, RecipeId, RegionId, UpgradeId } from "../content/types";
 
-export const SAVE_SCHEMA = 1;
+export const SAVE_SCHEMA = 2;
+
+/** Tree slots: 0–4 stand beside the stand (home zone), 5–10 are Orchard Grove plots. */
+export const HOME_TREE_SLOTS = 5;
+export const GROVE_TREE_SLOTS = 6;
 
 export interface Fruit {
   /** Growth progress 0..1; ripe at 1. */
   g: number;
   golden: boolean;
+  /** Very rare, very valuable (schema 2+). */
+  diamond?: boolean;
 }
 
 export interface QuestState {
@@ -35,6 +41,9 @@ export interface Stats {
   upgradesBought: number;
   goldenHarvested: number;
   bestCombo: number;
+  lemonsSold: number;
+  diamondHarvested: number;
+  wheelSpins: number;
 }
 
 export interface GameState {
@@ -69,13 +78,15 @@ export interface GameState {
   run: Stats;
   lastDailyDay: string;
   boostUntil: number;
+  /** Wall-clock ms of the last Lucky Wheel spin (schema 2+). */
+  lastSpinAt: number;
   settings: Settings;
   /** Once the player has served at least once, tutorial hints fade. */
   tutorialDone: boolean;
 }
 
 export function emptyStats(): Stats {
-  return { lemonsHarvested: 0, customersServed: 0, drinksMade: 0, coinsEarned: 0, upgradesBought: 0, goldenHarvested: 0, bestCombo: 0 };
+  return { lemonsHarvested: 0, customersServed: 0, drinksMade: 0, coinsEarned: 0, upgradesBought: 0, goldenHarvested: 0, bestCombo: 0, lemonsSold: 0, diamondHarvested: 0, wheelSpins: 0 };
 }
 
 export function freshQuest(): QuestState {
@@ -110,6 +121,7 @@ export function createFreshState(now: number): GameState {
     run: emptyStats(),
     lastDailyDay: "",
     boostUntil: 0,
+    lastSpinAt: 0,
     settings: { music: true, sfx: true, reducedMotion: false },
     tutorialDone: false,
   };
@@ -143,10 +155,12 @@ export interface SessionState {
   deliveryTimer: number;
   combo: number;
   comboTimer: number;
+  fountainTimer: number;
+  fountainBank: number;
   /** Seconds of simulated time since boot (animation clock). */
   time: number;
 }
 
 export function createSession(): SessionState {
-  return { customers: [], nextUid: 1, arrivalTimer: 1.5, helperTimers: {}, deliveryTimer: 0, combo: 0, comboTimer: 0, time: 0 };
+  return { customers: [], nextUid: 1, arrivalTimer: 1.5, helperTimers: {}, deliveryTimer: 0, combo: 0, comboTimer: 0, fountainTimer: 0, fountainBank: 0, time: 0 };
 }

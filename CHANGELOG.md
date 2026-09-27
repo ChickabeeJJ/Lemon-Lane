@@ -1,5 +1,30 @@
 # Changelog
 
+## 0.2.0 — Explore the lane
+
+### Added
+- **Four explorable zones** — Orchard Grove ◀ Lemon Stand ▶ Market Square ▶ Lemon Fair. Walk with the on-screen
+  arrows, `←`/`→` or `A`/`D`, or the zone dots; the camera glides between zones with parallax clouds and hills.
+  Arrows show a **!** when something is buildable or ready in that direction.
+- **Facilities you build in the world**: tap a construction outline (or use the Upgrades panel, now grouped by zone).
+  - Orchard Grove: **Tree Plots** (up to 6 extra trees), **Sprinkler** (growth), **Beehive** (golden + diamond lemons).
+  - Market Square: **Sell Crate** (sell raw lemons; `Q` / Sell button), **Lemon Chute** (auto-sells overflow when the
+    basket is full), **Juice Factory** (much faster press).
+  - Lemon Fair: **Lucky Wheel** (free timed spin: coins, jackpot, lemons, drinks, instant ripening, Sunny Rush),
+    **Lemonade Fountain** (passive income, also offline), **Golden Lemon Statue** (income multiplier).
+- **Diamond lemons**: very rare, worth 40 drinks.
+- New goals that walk players through every zone, with hints; Lucky Wheel status on the Goals tab.
+- **New loading screen**: sunburst, drifting clouds, hills, bouncing logo, animated mascot cat, lemonade progress bar
+  with a spinning lemon slice, staged messages and rotating tips.
+- **Redesigned Mochi Cat**: chibi proportions, glossy eyes with highlights, rounded ears with pink insides, cheek fluff,
+  ω mouth, whiskers, pink nose, collar with a swinging bell, swishing striped tail, ear twitches, a paw wave when
+  delighted, droopy ears when disappointed, and four coats (orange tabby, calico, grey tabby, cream).
+
+### Changed
+- Save schema 1 → 2 (migration remaps goal progress by ID; fruit gains an optional diamond flag; wheel timer added).
+- Pip costs 150 (was 90) and raw lemons are priced to keep drinks the better use when customers are waiting.
+- Tests: 80 (new world/facility/wheel/migration suite).
+
 ## 0.1.0 — First playable vertical slice
 
 Built from the Lemon Lane Master Bible, following its build order (§27) through step 13, plus parts of 15–18.
@@ -24,5 +49,5 @@ Built from the Lemon Lane Master Bible, following its build order (§27) through
 - Offline earnings summary with optional rewarded ×2; Sunny Rush rewarded boost.
 - Synthesized audio (SFX + music), music/SFX/reduced-motion settings, keyboard shortcuts, platform mute support.
 - Local analytics log for the bible's event list.
-- Tests: content validator, economy, save safety, simulation, formatting, and balance bots (65 tests).
+- Tests: content validator, economy, save safety, simulation, formatting, and balance bots.
 - Docs: README, architecture, decision log, known issues.

@@ -46,42 +46,6 @@ button {
   display: none !important;
 }
 
-/* ---------- Boot ---------- */
-#boot {
-  position: fixed;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  background: linear-gradient(var(--sky), var(--cream));
-  z-index: 50;
-}
-.boot-card {
-  text-align: center;
-}
-.boot-card h1 {
-  margin: 8px 0 0;
-  font-size: 44px;
-  line-height: 1;
-}
-.boot-sub {
-  margin: 4px 0 16px;
-  font-weight: 700;
-  color: var(--deep-leaf);
-}
-.boot-msg {
-  margin: 0;
-  opacity: 0.8;
-}
-.boot-lemon {
-  width: 72px;
-  height: 56px;
-  margin: 0 auto;
-  border-radius: 50%;
-  background: var(--lemon);
-  border: 4px solid var(--cocoa);
-  animation: bob 1.2s ease-in-out infinite;
-}
-
 /* ---------- Layout ---------- */
 #app {
   position: fixed;
@@ -793,5 +757,170 @@ body.reduced-motion *::after {
 @media (prefers-reduced-motion: reduce) {
   .boot-lemon {
     animation: none;
+  }
+}
+
+/* ---------- Exploring: arrows, zone banner, zone map ---------- */
+.nav-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-width: 74px;
+  padding: 8px 10px 6px;
+  border: var(--line) solid var(--cocoa);
+  border-radius: 20px;
+  background: var(--lemon);
+  box-shadow: 0 4px 0 var(--cocoa);
+  font-weight: 800;
+  cursor: pointer;
+  animation: nudge 2.4s ease-in-out infinite;
+}
+.nav-arrow.left {
+  left: 10px;
+  --nudge: -4px;
+}
+.nav-arrow.right {
+  right: 10px;
+  --nudge: 4px;
+}
+.nav-arrow:active {
+  transform: translateY(calc(-50% + 3px));
+  box-shadow: 0 1px 0 var(--cocoa);
+}
+.nav-arrow:focus-visible {
+  outline: 3px solid var(--coral);
+  outline-offset: 2px;
+}
+.arrow-glyph {
+  font-size: 26px;
+  line-height: 1;
+}
+.arrow-name {
+  font-size: 12px;
+  white-space: nowrap;
+}
+.nav-arrow .dot {
+  position: absolute;
+  top: -8px;
+  right: -8px;
+  min-width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--coral);
+  border: 2px solid var(--cocoa);
+  color: var(--white);
+  font-size: 13px;
+  line-height: 18px;
+  text-align: center;
+}
+@keyframes nudge {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  50% {
+    translate: var(--nudge) 0;
+  }
+}
+.zone-banner {
+  position: absolute;
+  top: 30%;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 22px;
+  background: var(--white);
+  border: var(--line) solid var(--cocoa);
+  border-radius: 999px;
+  font-size: 26px;
+  font-weight: 800;
+  box-shadow: 0 4px 0 rgba(90, 70, 56, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  white-space: nowrap;
+  z-index: 3;
+}
+.zone-banner.show {
+  animation: banner 1.8s ease-out forwards;
+}
+@keyframes banner {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.8);
+  }
+  15% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1.05);
+  }
+  25% {
+    transform: translateX(-50%) scale(1);
+  }
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.zone-map {
+  position: absolute;
+  top: 66px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 8px;
+  padding: 6px 10px;
+  background: rgba(255, 253, 247, 0.85);
+  border: 2px solid var(--cocoa);
+  border-radius: 999px;
+  z-index: 3;
+}
+.zone-dot {
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--cocoa);
+  background: var(--white);
+  cursor: pointer;
+}
+.zone-dot[aria-current="true"] {
+  background: var(--lemon);
+  transform: scale(1.25);
+}
+#toasts {
+  top: 100px;
+}
+.section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 4px;
+}
+.section-row .section-title {
+  margin: 0;
+}
+@media (orientation: portrait), (max-width: 600px) {
+  .nav-arrow {
+    min-width: 54px;
+    padding: 6px 6px 4px;
+    top: 42%;
+  }
+  .arrow-glyph {
+    font-size: 20px;
+  }
+  .arrow-name {
+    font-size: 10px;
+    max-width: 70px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .zone-banner {
+    font-size: 20px;
   }
 }

@@ -21,12 +21,15 @@ Honest status for 0.1.0. Items here block a CrazyGames **Full Launch** unless ma
 - Launch assets: cover art, icon, screenshots, store description.
 
 ## Rough edges
-- **Portrait phones**: the whole 16:9 lane is fitted to the screen width, so it's small in portrait. Landscape plays best.
+- **Portrait phones**: each 16:9 zone is fitted to the screen width, so it's small in portrait. Landscape plays best.
   The Pick / Squeeze / Serve buttons work the same everywhere.
 - On narrow phones the tab label "Upgrades" is clipped slightly.
+- On very wide screens a sliver of the neighbouring zone shows at the edges.
+- Lemons picked in the Orchard Grove fly to the basket at the stand, off-screen to the right.
 - Music is a short synthesized loop; final audio should be composed.
 - Art is procedural. It's consistent, but focal assets (characters, stand) would benefit from hand-illustrated versions
   following the same palette and anchors.
+- Facility pacing (Juice Factory, Golden Statue, Beehive) is only covered by the bots' cheapest-first buying.
 - Balance is tuned with bots for roughly the first hour (first Sunrise ≈ 1 h for an automation-first bot). Late-game
   (post-second Sunrise, Moonlit Market) pacing hasn't been simulated in depth.
 - Long idle sessions and very large numbers are covered by formatting and clamping tests, but they haven't been

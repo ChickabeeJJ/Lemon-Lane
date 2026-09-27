@@ -1,6 +1,7 @@
 // SaveManager: serialization, versioned migration, validation, backup and conflict handling.
 import { SAVE_SCHEMA, createFreshState, type GameState } from "../core/state";
 import { sanitizeState } from "./validate";
+import { QUESTS, QUEST_IDS_V1 } from "../content/content";
 
 export interface KeyValueStore {
   getItem(key: string): string | null;
@@ -21,8 +22,26 @@ interface Envelope {
 /** Migration from schema N to N+1, keyed by N. Add one for every schema bump. */
 export type MigrationTable = Record<number, (state: Record<string, unknown>) => Record<string, unknown>>;
 
-/** Schema 1 is the first shipped schema, so there is nothing to migrate yet. */
-export const MIGRATIONS: MigrationTable = {};
+export const MIGRATIONS: MigrationTable = {
+  /**
+   * 1 → 2: exploring zones. New goals were inserted into the authored chain, so the goal index is
+   * remapped by goal ID; the Lucky Wheel timer starts fresh. Fruit gains an optional `diamond` flag
+   * and grove tree slots are added lazily by the simulation, so neither needs rewriting here.
+   */
+  1: (state) => {
+    const quest = (typeof state.quest === "object" && state.quest !== null ? state.quest : {}) as Record<string, unknown>;
+    const oldIndex = typeof quest.index === "number" ? quest.index : 0;
+    let index = oldIndex;
+    if (oldIndex < QUEST_IDS_V1.length) {
+      const id = QUEST_IDS_V1[Math.max(0, Math.floor(oldIndex))];
+      const mapped = QUESTS.findIndex((q) => q.id === id);
+      index = mapped >= 0 ? mapped : oldIndex;
+    } else {
+      index = QUESTS.length + (oldIndex - QUEST_IDS_V1.length);
+    }
+    return { ...state, quest: { ...quest, index }, lastSpinAt: 0 };
+  },
+};
 
 export type LoadStatus = "fresh" | "loaded" | "recovered" | "quarantined";
 

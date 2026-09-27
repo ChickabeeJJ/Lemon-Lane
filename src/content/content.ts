@@ -1,6 +1,8 @@
 // ContentRegistry: all balancing and content numbers live here, never in rendering code.
 import type {
   CosmeticDef,
+  WheelSegment,
+  ZoneDef,
   CustomerDef,
   HelperDef,
   PerkDef,
@@ -9,6 +11,7 @@ import type {
   RegionDef,
   StatId,
   UpgradeDef,
+  UpgradeId,
 } from "./types";
 
 export const CONTENT_VERSION = 1;
@@ -41,6 +44,12 @@ export const STAT_BASE: Record<StatId, number> = {
   rewardMult: 1,
   treeCount: 1,
   starBonus: 0,
+  grovePlots: 0,
+  diamondChance: 0.002,
+  lemonPrice: 1,
+  autoSell: 0,
+  passiveIncome: 0,
+  wheelCooldown: 660,
 };
 
 /** Soft limits keep multiplicative systems from running away. */
@@ -64,6 +73,11 @@ export const STAT_LIMITS: Partial<Record<StatId, [number, number]>> = {
   upgradeCostScale: [0.5, 1],
   treeCount: [1, 5],
   starBonus: [0, 1],
+  grovePlots: [0, 6],
+  diamondChance: [0, 0.05],
+  lemonPrice: [0.5, 3],
+  autoSell: [0, 1],
+  wheelCooldown: [180, 900],
 };
 
 /** Global simulation constants (not tied to one content item). */
@@ -93,33 +107,89 @@ export const TUNING = {
   offlineSummaryMinSeconds: 60,
   dailyBaseReward: 100,
   dailyIncomeSeconds: 300,
+  /** Diamond lemon harvest pays this many drinks' worth of coins. */
+  diamondValueDrinks: 40,
+  /** A raw lemon sells for this fraction of a drink's per-lemon value (before Sell Crate upgrades). */
+  rawLemonShare: 0.25,
+  /** Fountain pays out in lumps this often (seconds). */
+  fountainInterval: 3,
+  /** Lucky Wheel rewards. */
+  wheelCoinSeconds: 60,
+  wheelBigCoinSeconds: 300,
+  wheelMinCoins: 40,
+  wheelRushSeconds: 45,
 };
 
 export const UPGRADES: UpgradeDef[] = [
-  { id: "lemon_tree", region: "tiny_yard", baseCost: 15, growth: 1.45, maxLevel: 40, sort: 1,
+  { id: "lemon_tree", zone: "home", region: "tiny_yard", baseCost: 15, growth: 1.45, maxLevel: 40, sort: 1,
     effects: [{ stat: "growthSpeed", pct: 0.12 }, { stat: "fruitSlots", add: 0.25 }] },
-  { id: "signboard", region: "tiny_yard", baseCost: 20, growth: 1.5, maxLevel: 40, sort: 2,
+  { id: "signboard", zone: "home", region: "tiny_yard", baseCost: 20, growth: 1.5, maxLevel: 40, sort: 2,
     effects: [{ stat: "arrivalRate", pct: 0.12 }] },
-  { id: "juice_press", region: "tiny_yard", baseCost: 30, growth: 1.5, maxLevel: 40, sort: 3,
+  { id: "juice_press", zone: "home", region: "tiny_yard", baseCost: 30, growth: 1.5, maxLevel: 40, sort: 3,
     effects: [{ stat: "pressSpeed", pct: 0.15 }, { stat: "drinkValue", pct: 0.08 }] },
-  { id: "basket", region: "tiny_yard", baseCost: 25, growth: 1.55, maxLevel: 30, sort: 4,
+  { id: "basket", zone: "home", region: "tiny_yard", baseCost: 25, growth: 1.55, maxLevel: 30, sort: 4,
     effects: [{ stat: "basketCap", add: 4 }] },
-  { id: "stand_counter", region: "tiny_yard", baseCost: 40, growth: 1.6, maxLevel: 30, sort: 5,
+  { id: "stand_counter", zone: "home", region: "tiny_yard", baseCost: 40, growth: 1.6, maxLevel: 30, sort: 5,
     effects: [{ stat: "counterCap", add: 1 }, { stat: "queueSize", add: 0.34 }] },
-  { id: "flower_pots", region: "sunny_lane", baseCost: 120, growth: 1.55, maxLevel: 30, sort: 6,
+  { id: "flower_pots", zone: "home", region: "sunny_lane", baseCost: 120, growth: 1.55, maxLevel: 30, sort: 6,
     effects: [{ stat: "tipChance", add: 0.015 }, { stat: "patience", pct: 0.04 }] },
-  { id: "ice_box", region: "sunny_lane", baseCost: 180, growth: 1.6, maxLevel: 30, sort: 7,
+  { id: "ice_box", zone: "home", region: "sunny_lane", baseCost: 180, growth: 1.6, maxLevel: 30, sort: 7,
     effects: [{ stat: "premiumBonus", add: 0.1 }, { stat: "premiumChance", add: 0.01 }] },
-  { id: "sun_umbrella", region: "sunny_lane", baseCost: 220, growth: 1.6, maxLevel: 25, sort: 8,
+  { id: "sun_umbrella", zone: "home", region: "sunny_lane", baseCost: 220, growth: 1.6, maxLevel: 25, sort: 8,
     effects: [{ stat: "patience", pct: 0.08 }] },
-  { id: "cash_register", region: "picnic_corner", baseCost: 900, growth: 1.6, maxLevel: 30, sort: 9,
+  { id: "cash_register", zone: "home", region: "picnic_corner", baseCost: 900, growth: 1.6, maxLevel: 30, sort: 9,
     effects: [{ stat: "comboWindow", add: 0.5 }, { stat: "tipChance", add: 0.01 }] },
-  { id: "recipe_book", region: "picnic_corner", baseCost: 1200, growth: 1.7, maxLevel: 12, sort: 10,
+  { id: "recipe_book", zone: "home", region: "picnic_corner", baseCost: 1200, growth: 1.7, maxLevel: 12, sort: 10,
     effects: [{ stat: "recipeDiscount", add: 0.05 }, { stat: "favoriteBonus", add: 0.05 }] },
-  { id: "helper_bench", region: "picnic_corner", baseCost: 1800, growth: 2.2, maxLevel: 6, sort: 11,
+  { id: "helper_bench", zone: "home", region: "picnic_corner", baseCost: 1800, growth: 2.2, maxLevel: 6, sort: 11,
     effects: [{ stat: "helperSlots", add: 1 }, { stat: "helperSpeed", pct: 0.05 }] },
-  { id: "delivery_cart", region: "market_row", baseCost: 9000, growth: 1.65, maxLevel: 30, sort: 12,
+  { id: "delivery_cart", zone: "home", region: "market_row", baseCost: 9000, growth: 1.65, maxLevel: 30, sort: 12,
     effects: [{ stat: "deliveryRate", add: 3 }, { stat: "offlineEfficiency", add: 0.015 }] },
+
+  // Orchard Grove (left)
+  { id: "grove_plot", zone: "grove", region: "tiny_yard", baseCost: 250, growth: 2.3, maxLevel: 6, sort: 20,
+    effects: [{ stat: "grovePlots", add: 1 }] },
+  { id: "sprinkler", zone: "grove", region: "sunny_lane", baseCost: 700, growth: 1.65, maxLevel: 20, sort: 21,
+    effects: [{ stat: "growthSpeed", pct: 0.1 }] },
+  { id: "beehive", zone: "grove", region: "picnic_corner", baseCost: 5000, growth: 1.8, maxLevel: 15, sort: 22,
+    effects: [{ stat: "goldenChance", add: 0.006 }, { stat: "diamondChance", add: 0.0015 }] },
+
+  // Market Square (right)
+  { id: "sell_crate", zone: "market", region: "tiny_yard", baseCost: 40, growth: 1.55, maxLevel: 30, sort: 30,
+    effects: [{ stat: "lemonPrice", pct: 0.12 }] },
+  { id: "lemon_chute", zone: "market", region: "sunny_lane", baseCost: 1200, growth: 2, maxLevel: 1, sort: 31,
+    effects: [{ stat: "autoSell", add: 1 }] },
+  { id: "juice_factory", zone: "market", region: "picnic_corner", baseCost: 9000, growth: 1.75, maxLevel: 20, sort: 32,
+    effects: [{ stat: "pressSpeed", pct: 0.25 }, { stat: "counterCap", add: 0.5 }] },
+
+  // Lemon Fair (far right)
+  { id: "lucky_wheel", zone: "fair", region: "tiny_yard", baseCost: 250, growth: 3, maxLevel: 5, sort: 40,
+    effects: [{ stat: "wheelCooldown", add: -60 }] },
+  { id: "fountain", zone: "fair", region: "sunny_lane", baseCost: 1500, growth: 1.6, maxLevel: 25, sort: 41,
+    effects: [{ stat: "passiveIncome", add: 2 }] },
+  { id: "golden_statue", zone: "fair", region: "market_row", baseCost: 40000, growth: 2, maxLevel: 10, sort: 42,
+    effects: [{ stat: "incomeMult", pct: 0.12 }] },
+];
+
+export const ZONES: ZoneDef[] = [
+  { id: "grove", index: -1 },
+  { id: "home", index: 0 },
+  { id: "market", index: 1 },
+  { id: "fair", index: 2 },
+];
+
+/** Upgrades that only exist as a building once bought (level 0 shows a construction outline). */
+export const FACILITY_IDS: UpgradeId[] = ["sprinkler", "beehive", "sell_crate", "lemon_chute", "juice_factory", "lucky_wheel", "fountain", "golden_statue"];
+
+export const WHEEL: WheelSegment[] = [
+  { kind: "coins", weight: 3, color: "#FFD95A" },
+  { kind: "lemons", weight: 2, color: "#79C96B" },
+  { kind: "ripen", weight: 2, color: "#A9DDF5" },
+  { kind: "coins", weight: 3, color: "#FFF4D6" },
+  { kind: "drinks", weight: 1.5, color: "#F4A3B8" },
+  { kind: "rush", weight: 1.5, color: "#F28C7A" },
+  { kind: "coins", weight: 3, color: "#FFD95A" },
+  { kind: "bigCoins", weight: 1, color: "#FFC83D" },
 ];
 
 export const RECIPES: RecipeDef[] = [
@@ -169,7 +239,7 @@ export const CUSTOMERS: CustomerDef[] = [
 ];
 
 export const HELPERS: HelperDef[] = [
-  { id: "pip", region: "tiny_yard", hireCost: 90, growth: 1.9, maxLevel: 15, action: "harvest", interval: 2.2, effects: [], sort: 1,
+  { id: "pip", region: "tiny_yard", hireCost: 150, growth: 1.9, maxLevel: 15, action: "harvest", interval: 2.2, effects: [], sort: 1,
     art: { body: "#FFE680", accent: "#79C96B" } },
   { id: "roo", region: "sunny_lane", hireCost: 500, growth: 1.9, maxLevel: 15, action: "serve", interval: 2.6, effects: [], sort: 2,
     art: { body: "#E9B98A", accent: "#F28C7A" } },
@@ -224,11 +294,17 @@ export const QUESTS: QuestDef[] = [
   { id: "q_first_serve", kind: "serve", target: 2, reward: 10 },
   { id: "q_first_upgrade", kind: "buyUpgrade", target: 1, reward: 15 },
   { id: "q_hire_pip", kind: "hire", ref: "pip", target: 1, reward: 25 },
+  { id: "q_build_crate", kind: "upgradeLevel", ref: "sell_crate", target: 1, reward: 30 },
+  { id: "q_sell_20", kind: "sell", target: 20, reward: 40 },
   { id: "q_serve_10", kind: "serve", target: 10, reward: 40 },
   { id: "q_tree_3", kind: "upgradeLevel", ref: "lemon_tree", target: 3, reward: 60 },
+  { id: "q_wheel", kind: "upgradeLevel", ref: "lucky_wheel", target: 1, reward: 80 },
+  { id: "q_spin", kind: "spin", target: 1, reward: 60 },
+  { id: "q_plot", kind: "upgradeLevel", ref: "grove_plot", target: 1, reward: 120 },
   { id: "q_sunny_lane", kind: "region", ref: "sunny_lane", target: 1, reward: 100 },
   { id: "q_hire_roo", kind: "hire", ref: "roo", target: 1, reward: 150 },
   { id: "q_honey", kind: "recipe", ref: "honey_lemon", target: 1, reward: 200 },
+  { id: "q_fountain", kind: "upgradeLevel", ref: "fountain", target: 1, reward: 400 },
   { id: "q_combo_5", kind: "combo", target: 5, reward: 250 },
   { id: "q_golden", kind: "golden", target: 1, reward: 300 },
   { id: "q_earn_5k", kind: "earn", target: 5000, reward: 500 },
@@ -236,6 +312,7 @@ export const QUESTS: QuestDef[] = [
   { id: "q_press_10", kind: "upgradeLevel", ref: "juice_press", target: 10, reward: 1500 },
   { id: "q_mint", kind: "recipe", ref: "mint_sparkle", target: 1, reward: 2500 },
   { id: "q_hire_basil", kind: "hire", ref: "basil", target: 1, reward: 3000 },
+  { id: "q_factory", kind: "upgradeLevel", ref: "juice_factory", target: 1, reward: 4000 },
   { id: "q_serve_250", kind: "serve", target: 250, reward: 5000 },
   { id: "q_market", kind: "region", ref: "market_row", target: 1, reward: 10000 },
   { id: "q_combo_15", kind: "combo", target: 15, reward: 15000 },
@@ -253,6 +330,13 @@ export const COSMETICS: CosmeticDef[] = [
   { id: "awning_moon", stars: 20, stripes: ["#6C7BC4", "#FFD95A"], sort: 6 },
 ];
 
+/** Authored goal IDs as shipped in save schema 1, used to remap goal progress in migration 1 → 2. */
+export const QUEST_IDS_V1 = [
+  "q_first_pick", "q_first_serve", "q_first_upgrade", "q_hire_pip", "q_serve_10", "q_tree_3", "q_sunny_lane", "q_hire_roo",
+  "q_honey", "q_combo_5", "q_golden", "q_earn_5k", "q_picnic", "q_press_10", "q_mint", "q_hire_basil", "q_serve_250",
+  "q_market", "q_combo_15", "q_earn_250k", "q_orchard", "q_sunrise",
+];
+
 export const upgradeById = new Map(UPGRADES.map((u) => [u.id, u]));
 export const recipeById = new Map(RECIPES.map((r) => [r.id, r]));
 export const customerById = new Map(CUSTOMERS.map((c) => [c.id, c]));
@@ -260,3 +344,4 @@ export const helperById = new Map(HELPERS.map((h) => [h.id, h]));
 export const regionById = new Map(REGIONS.map((r) => [r.id, r]));
 export const perkById = new Map(PERKS.map((p) => [p.id, p]));
 export const cosmeticById = new Map(COSMETICS.map((c) => [c.id, c]));
+export const zoneById = new Map(ZONES.map((z) => [z.id, z]));

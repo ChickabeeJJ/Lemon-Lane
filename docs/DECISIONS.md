@@ -50,3 +50,22 @@ Format follows bible §41: decision, context, alternatives, consequences.
 ### D-010 — Analytics stay local
 - **Context:** Bible lists events, but no analytics backend exists and inventing one would be fake integration.
 - **Decision:** Events with minimal, non-personal payloads go to an in-memory log (`window.__lemonLane.analytics`).
+
+### D-011 — Explorable zones instead of a single fixed screen
+- **Context:** Player feedback asked for arrows to move around the world and unlock new facilities (the
+  "Sell Lemons"-style tycoon loop). Bible §4 prefers a stable camera for spatial memory.
+- **Decision:** Keep each zone's camera fixed and identical in scale; arrows move between four fixed zone "rooms"
+  (no free scrolling). The stand stays the home zone; customers never leave it.
+- **Consequences:** Spatial memory survives (every zone always looks the same), expansion gets physical space.
+
+### D-012 — Facilities are upgrades with a zone
+- **Decision:** `UpgradeDef.zone` places an upgrade in the world; level 0 renders a tappable construction outline.
+  No separate facility system, so costs, effects, previews, saves and validation are shared.
+
+### D-013 — Selling raw lemons
+- **Decision:** Raw lemons sell for 25% of a drink's per-lemon value × Sell Crate multiplier. Drinks stay better when
+  customers are waiting; selling wins when customers are the bottleneck — a real choice, not a replacement.
+
+### D-014 — Lucky Wheel is free and timed
+- **Decision:** No ads or purchases on the wheel; rewards scale with income; applied atomically at spin time
+  (the animation is presentation only, so a refresh mid-spin never loses or duplicates a prize).

@@ -24,7 +24,20 @@ export type UpgradeId =
   | "helper_bench"
   | "sun_umbrella"
   | "flower_pots"
-  | "recipe_book";
+  | "recipe_book"
+  // Facilities in the other zones
+  | "grove_plot"
+  | "sprinkler"
+  | "beehive"
+  | "sell_crate"
+  | "lemon_chute"
+  | "juice_factory"
+  | "fountain"
+  | "lucky_wheel"
+  | "golden_statue";
+
+/** Explorable zones, left to right. The camera moves between them with arrows. */
+export type ZoneId = "grove" | "home" | "market" | "fair";
 
 export type RecipeId =
   | "classic"
@@ -90,7 +103,13 @@ export type StatId =
   | "upgradeCostScale"
   | "rewardMult"
   | "treeCount"
-  | "starBonus";
+  | "starBonus"
+  | "grovePlots"
+  | "diamondChance"
+  | "lemonPrice"
+  | "autoSell"
+  | "passiveIncome"
+  | "wheelCooldown";
 
 /**
  * A stat modifier applied once per level of its source (regions count as level 1).
@@ -104,6 +123,8 @@ export interface Effect {
 
 export interface UpgradeDef {
   id: UpgradeId;
+  /** Zone where the station/facility stands in the world. */
+  zone: ZoneId;
   region: RegionId;
   baseCost: number;
   growth: number;
@@ -194,7 +215,9 @@ export type QuestKind =
   | "recipe"
   | "combo"
   | "golden"
-  | "sunrise";
+  | "sunrise"
+  | "sell"
+  | "spin";
 
 export interface QuestDef {
   id: string;
@@ -210,4 +233,18 @@ export interface CosmeticDef {
   stars: number;
   stripes: [string, string];
   sort: number;
+}
+
+export interface ZoneDef {
+  id: ZoneId;
+  /** Horizontal slot; home is 0, each zone is one world-width wide. */
+  index: number;
+}
+
+export type WheelRewardKind = "coins" | "bigCoins" | "lemons" | "rush" | "ripen" | "drinks";
+
+export interface WheelSegment {
+  kind: WheelRewardKind;
+  weight: number;
+  color: string;
 }

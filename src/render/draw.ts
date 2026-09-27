@@ -664,7 +664,11 @@ function face(ctx: Ctx, x: number, y: number, r: number, mood: Mood, blink: bool
   ctx.stroke();
 }
 
-export function drawCustomer(ctx: Ctx, x: number, y: number, def: CustomerDef, mood: Mood, t: number, walking: boolean, motion: boolean, s = 1): void {
+export function drawCustomer(ctx: Ctx, x: number, y: number, def: CustomerDef, mood: Mood, t: number, walking: boolean, motion: boolean, s = 1, variant = 0): void {
+  if (def.id === "mochi_cat") {
+    drawCat(ctx, x, y, mood, t, walking, motion, s * 0.95, variant);
+    return;
+  }
   const a = def.art;
   const hop = walking && motion ? Math.abs(Math.sin(t * 10)) * 4 : motion ? Math.sin(t * 2.5) * 1 : 0;
   groundShadow(ctx, x, y, 44 * s);
@@ -1034,4 +1038,342 @@ export function drawBoat(ctx: Ctx, x: number, y: number): void {
   ctx.lineTo(x + 2, y - 16);
   ctx.closePath();
   fillStroke(ctx, C.white, 2);
+}
+
+// ---------------------------------------------------------------------------
+// Cat (Mochi Cat customer): the lane's mascot, drawn with extra care.
+
+interface CatCoat {
+  base: string;
+  mark: string;
+  belly: string;
+  inner: string;
+  eye: string;
+  collar: string;
+  pattern: "tabby" | "calico" | "cream";
+  patch2?: string;
+}
+
+export const CAT_COATS: CatCoat[] = [
+  { base: "#F7B46A", mark: "#D9803C", belly: "#FFF4E6", inner: "#F7A8A0", eye: "#6CBF5A", collar: C.coral, pattern: "tabby" },
+  { base: "#FFF6EA", mark: "#F2A04E", belly: "#FFFDF7", inner: "#F7A8A0", eye: "#E8A33D", collar: C.sky, pattern: "calico", patch2: "#6B5345" },
+  { base: "#B9BFCB", mark: "#8E95A3", belly: "#F2F2F6", inner: "#F4B8C0", eye: "#6FB6E0", collar: C.lemon, pattern: "tabby" },
+  { base: "#F6E2C8", mark: "#E9C39E", belly: "#FFFDF7", inner: "#F7A8A0", eye: "#9C7358", collar: C.leaf, pattern: "cream" },
+];
+
+/**
+ * A chibi cat with big glossy eyes, rounded ears, cheek fluff, an ω mouth, whiskers, a collar bell
+ * and a swishing tail. `variant` picks the coat; `t` drives idle animation.
+ */
+export function drawCat(ctx: Ctx, x: number, y: number, mood: Mood, t: number, walking: boolean, motion: boolean, s = 1, variant = 0): void {
+  const coat = CAT_COATS[((variant % CAT_COATS.length) + CAT_COATS.length) % CAT_COATS.length];
+  const sad = mood === "sad";
+  const hop = walking && motion ? Math.abs(Math.sin(t * 10)) * 5 : 0;
+  const breathe = motion && !walking ? Math.sin(t * 2.4) * 0.025 : 0;
+  const squash = walking && motion ? Math.sin(t * 20) * 0.04 : 0;
+
+  groundShadow(ctx, x, y, 50 * s);
+  ctx.save();
+  ctx.translate(x, y - hop);
+  ctx.scale(s * (1 + squash), s * (1 - squash + breathe));
+  ctx.lineJoin = "round";
+  ctx.lineCap = "round";
+
+  // Tail: thick S-curve with a striped tip, swishing (faster when delighted).
+  const swish = motion ? Math.sin(t * (mood === "delighted" ? 7 : 2.2)) * (sad ? 0.1 : 0.3) : 0;
+  const tailPath = () => {
+    ctx.beginPath();
+    ctx.moveTo(10, -12);
+    ctx.bezierCurveTo(34, -10, 40 + swish * 20, -30, 30 + swish * 26, sad ? -30 : -50);
+    ctx.quadraticCurveTo(26 + swish * 30, sad ? -24 : -60, 20 + swish * 26, sad ? -20 : -58);
+  };
+  tailPath();
+  ctx.lineWidth = 12;
+  ctx.strokeStyle = C.cocoa;
+  ctx.stroke();
+  tailPath();
+  ctx.lineWidth = 7;
+  ctx.strokeStyle = coat.base;
+  ctx.stroke();
+  // Tip
+  ctx.save();
+  ctx.translate(26 + swish * 28, sad ? -26 : -55);
+  ellipse(ctx, 0, 0, 4.5, 4.5);
+  ctx.fillStyle = coat.pattern === "calico" ? coat.patch2! : coat.mark;
+  ctx.fill();
+  ctx.restore();
+
+  // Back feet
+  for (const sx of [-1, 1]) {
+    const step = walking && motion ? Math.sin(t * 20 + (sx > 0 ? Math.PI : 0)) * 2 : 0;
+    ellipse(ctx, sx * 10, -3 - Math.max(0, step), 7.5, 4.8);
+    fillStroke(ctx, coat.base, 2.5);
+  }
+
+  // Body (pear) + belly
+  ctx.beginPath();
+  ctx.moveTo(-15, -4);
+  ctx.bezierCurveTo(-20, -18, -15, -36, 0, -37);
+  ctx.bezierCurveTo(15, -36, 20, -18, 15, -4);
+  ctx.quadraticCurveTo(0, 2, -15, -4);
+  ctx.closePath();
+  fillStroke(ctx, coat.base, 3);
+  ellipse(ctx, 0, -16, 9.5, 11.5);
+  ctx.fillStyle = coat.belly;
+  ctx.fill();
+  if (coat.pattern === "tabby") {
+    ctx.strokeStyle = coat.mark;
+    ctx.lineWidth = 2.4;
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * 17, -24);
+      ctx.quadraticCurveTo(sx * 13, -22, sx * 12, -18);
+      ctx.moveTo(sx * 17, -16);
+      ctx.quadraticCurveTo(sx * 14, -14, sx * 13, -10);
+      ctx.stroke();
+    }
+  }
+
+  // Front paws (one waves when delighted)
+  const wave = mood === "delighted" && motion ? Math.sin(t * 14) * 0.5 : 0;
+  ellipse(ctx, 6, -6, 5.5, 4.3);
+  fillStroke(ctx, coat.pattern === "calico" ? C.white : coat.base, 2.2);
+  if (mood === "delighted") {
+    ctx.save();
+    ctx.translate(-13, -26);
+    ctx.rotate(-0.6 + wave);
+    rrPath(ctx, -4.5, -14, 9, 16, 4.5);
+    fillStroke(ctx, coat.base, 2.2);
+    ellipse(ctx, 0, -12, 5.5, 5);
+    fillStroke(ctx, coat.pattern === "calico" ? C.white : coat.base, 2.2);
+    ctx.fillStyle = coat.inner;
+    ellipse(ctx, 0, -11.5, 2.2, 1.8);
+    ctx.fill();
+    ctx.restore();
+  } else {
+    ellipse(ctx, -6, -6, 5.5, 4.3);
+    fillStroke(ctx, coat.pattern === "calico" ? C.white : coat.base, 2.2);
+  }
+
+  // Collar + bell
+  rrPath(ctx, -12.5, -37, 25, 6, 3);
+  fillStroke(ctx, coat.collar, 2);
+  const bellSwing = motion ? Math.sin(t * 5) * 1.2 : 0;
+  ellipse(ctx, bellSwing, -29.5, 4, 4);
+  fillStroke(ctx, C.gold, 1.8);
+  ctx.beginPath();
+  ctx.moveTo(bellSwing - 2, -28.5);
+  ctx.lineTo(bellSwing + 2, -28.5);
+  ctx.lineWidth = 1.2;
+  ctx.strokeStyle = C.cocoa;
+  ctx.stroke();
+
+  // Head group
+  const hy = -58;
+  const tilt = motion ? Math.sin(t * 1.6) * 0.05 + (mood === "delighted" ? Math.sin(t * 6) * 0.06 : 0) : 0;
+  ctx.save();
+  ctx.translate(0, hy);
+  ctx.rotate(tilt);
+
+  // Ears (behind head). Droop when sad; one ear twitches now and then.
+  const twitch = motion && Math.sin(t * 0.9 + variant) > 0.97 ? 0.25 : 0;
+  for (const sx of [-1, 1]) {
+    ctx.save();
+    ctx.translate(sx * 15, -12);
+    ctx.rotate(sx * (sad ? 0.75 : 0.12) + (sx < 0 ? -twitch : 0));
+    ctx.beginPath();
+    ctx.moveTo(-9, 6);
+    ctx.quadraticCurveTo(-7, -14, 0, -20);
+    ctx.quadraticCurveTo(7, -14, 9, 6);
+    ctx.closePath();
+    fillStroke(ctx, coat.pattern === "calico" && sx < 0 ? coat.mark : coat.base, 3);
+    ctx.beginPath();
+    ctx.moveTo(-4.5, 3);
+    ctx.quadraticCurveTo(-3.5, -9, 0, -13);
+    ctx.quadraticCurveTo(3.5, -9, 4.5, 3);
+    ctx.closePath();
+    ctx.fillStyle = coat.inner;
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Head shape with cheek fluff: stroke all parts, then fill all (seamless outline).
+  const headParts: [number, number, number, number][] = [
+    [0, 0, 26, 21.5],
+    [-21, 6, 8, 6.5],
+    [21, 6, 8, 6.5],
+  ];
+  ctx.lineWidth = 6;
+  ctx.strokeStyle = C.cocoa;
+  for (const [hx, hy2, rx, ry] of headParts) {
+    ellipse(ctx, hx, hy2, rx, ry);
+    ctx.stroke();
+  }
+  ctx.fillStyle = coat.base;
+  for (const [hx, hy2, rx, ry] of headParts) {
+    ellipse(ctx, hx, hy2, rx, ry);
+    ctx.fill();
+  }
+  // Fluff tufts on the cheeks
+  ctx.strokeStyle = C.cocoa;
+  ctx.lineWidth = 2;
+  for (const sx of [-1, 1]) {
+    ctx.beginPath();
+    ctx.moveTo(sx * 27, 7);
+    ctx.lineTo(sx * 31, 10);
+    ctx.moveTo(sx * 26, 11);
+    ctx.lineTo(sx * 29, 14);
+    ctx.stroke();
+  }
+
+  // Markings, clipped to the head
+  ctx.save();
+  ellipse(ctx, 0, 0, 25, 20.5);
+  ctx.clip();
+  if (coat.pattern === "calico") {
+    ctx.fillStyle = coat.mark;
+    ellipse(ctx, -15, -9, 15, 12);
+    ctx.fill();
+    ctx.fillStyle = coat.patch2!;
+    ellipse(ctx, 17, -14, 11, 8);
+    ctx.fill();
+  } else if (coat.pattern === "tabby") {
+    ctx.strokeStyle = coat.mark;
+    ctx.lineWidth = 2.8;
+    for (const dx of [-6, 0, 6]) {
+      ctx.beginPath();
+      ctx.moveTo(dx, -21);
+      ctx.lineTo(dx * 0.8, -13 + Math.abs(dx) * 0.3);
+      ctx.stroke();
+    }
+    for (const sx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(sx * 26, -2);
+      ctx.lineTo(sx * 19, 0);
+      ctx.moveTo(sx * 26, 4);
+      ctx.lineTo(sx * 20, 5);
+      ctx.stroke();
+    }
+  } else {
+    ctx.fillStyle = coat.mark;
+    ellipse(ctx, 0, -20, 12, 7);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  // Muzzle
+  ctx.fillStyle = coat.belly;
+  ellipse(ctx, -5, 8, 7.5, 6);
+  ctx.fill();
+  ellipse(ctx, 5, 8, 7.5, 6);
+  ctx.fill();
+
+  // Blush
+  ctx.fillStyle = "rgba(242,140,122,0.45)";
+  ellipse(ctx, -16, 7, 5, 3);
+  ctx.fill();
+  ellipse(ctx, 16, 7, 5, 3);
+  ctx.fill();
+
+  // Eyes
+  const blink = motion && !sad && Math.sin(t * 1.3 + variant * 2) > 0.985;
+  const look = sad ? 2 : 0;
+  for (const sx of [-1, 1]) {
+    const ex = sx * 10.5;
+    const ey = -2;
+    ctx.strokeStyle = C.cocoa;
+    ctx.fillStyle = C.cocoa;
+    if (mood === "delighted") {
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(ex, ey + 2, 5, Math.PI * 1.1, Math.PI * 1.9);
+      ctx.stroke();
+    } else if (blink) {
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.arc(ex, ey - 1, 5, Math.PI * 0.15, Math.PI * 0.85);
+      ctx.stroke();
+    } else {
+      ellipse(ctx, ex, ey, 6.2, 7.2);
+      ctx.fill();
+      ellipse(ctx, ex, ey + 0.8 + look * 0.3, 4.9, 5.9);
+      ctx.fillStyle = coat.eye;
+      ctx.fill();
+      ellipse(ctx, ex, ey + 1 + look * 0.5, 2.6, 4.2);
+      ctx.fillStyle = C.cocoa;
+      ctx.fill();
+      ctx.fillStyle = C.white;
+      ellipse(ctx, ex - 1.8, ey - 2.4, 2.2, 2.2);
+      ctx.fill();
+      ellipse(ctx, ex + 2, ey + 2.5, 1, 1);
+      ctx.fill();
+      if (sad) {
+        // Soft worried brow, never cruel.
+        ctx.beginPath();
+        ctx.moveTo(ex - sx * 5, ey - 11);
+        ctx.lineTo(ex + sx * 3, ey - 9);
+        ctx.lineWidth = 1.8;
+        ctx.strokeStyle = C.cocoa;
+        ctx.stroke();
+      }
+    }
+  }
+
+  // Nose (little rounded triangle)
+  ctx.beginPath();
+  ctx.moveTo(-2.8, 4.2);
+  ctx.quadraticCurveTo(0, 3, 2.8, 4.2);
+  ctx.quadraticCurveTo(0.8, 7.4, 0, 7.4);
+  ctx.quadraticCurveTo(-0.8, 7.4, -2.8, 4.2);
+  ctx.closePath();
+  fillStroke(ctx, "#F28C9A", 1.2);
+
+  // Mouth: ω, open when delighted, small wobble when sad
+  ctx.strokeStyle = C.cocoa;
+  ctx.lineWidth = 1.6;
+  if (sad) {
+    ctx.beginPath();
+    ctx.moveTo(-3.5, 12);
+    ctx.quadraticCurveTo(0, 10, 3.5, 12);
+    ctx.stroke();
+  } else {
+    if (mood === "delighted") {
+      ctx.beginPath();
+      ctx.moveTo(-3, 9.5);
+      ctx.quadraticCurveTo(0, 16, 3, 9.5);
+      ctx.closePath();
+      fillStroke(ctx, "#E8707A", 1.4);
+    }
+    ctx.beginPath();
+    ctx.moveTo(0, 7.4);
+    ctx.lineTo(0, 8.8);
+    ctx.arc(-2.4, 8.8, 2.4, 0, Math.PI * 0.95);
+    ctx.moveTo(0, 8.8);
+    ctx.arc(2.4, 8.8, 2.4, Math.PI, Math.PI * 0.05, true);
+    ctx.stroke();
+  }
+
+  // Whiskers
+  ctx.strokeStyle = "rgba(90,70,56,0.8)";
+  ctx.lineWidth = 1.1;
+  for (const sx of [-1, 1]) {
+    for (let i = -1; i <= 1; i++) {
+      ctx.beginPath();
+      ctx.moveTo(sx * 14, 8 + i * 2.5);
+      ctx.quadraticCurveTo(sx * 26, 6 + i * 4, sx * 36, 5 + i * 6);
+      ctx.stroke();
+    }
+  }
+
+  // Happy sparkles
+  if (mood === "delighted") {
+    const tw = motion ? 0.6 + 0.4 * Math.sin(t * 9) : 1;
+    ctx.fillStyle = C.gold;
+    star(ctx, -31, -18, 4.5 * tw, 4, 0.35);
+    ctx.fill();
+    star(ctx, 32, -24, 3.5 * tw, 4, 0.35);
+    ctx.fill();
+  }
+  ctx.restore(); // head
+  ctx.restore();
 }

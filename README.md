@@ -2,7 +2,8 @@
 
 *Plant a little. Sell a little. Grow a lot.*
 
-A cute 2D idle tycoon for [CrazyGames](https://www.crazygames.com). Grow lemons, squeeze drinks, serve
+Walk between the **Orchard Grove**, the **Lemon Stand**, **Market Square** and the **Lemon Fair**, building
+facilities as you go. A cute 2D idle tycoon for [CrazyGames](https://www.crazygames.com). Grow lemons, squeeze drinks, serve
 neighborhood customers, hire helpers, open up the lane, discover recipes, collect stickers and awnings,
 and celebrate a **Sunrise** that turns this chapter's progress into permanent Sunny Tokens.
 
@@ -17,6 +18,10 @@ npm run dev          # http://localhost:5173  (add ?nosdk to skip loading the Cr
 
 | Action | Mouse / touch | Keyboard |
 | --- | --- | --- |
+| Walk between zones | ◀ ▶ arrows or zone dots | `←` `→` / `A` `D` |
+| Build a facility | Tap its construction outline | — |
+| Sell basket lemons | Tap the Sell Crate, or **Sell** | `Q` |
+| Spin the Lucky Wheel | Tap the wheel | — |
 | Pick ripe lemons | Tap a tree, or the **Pick** button | `Space` |
 | Squeeze the press faster | Tap the press, or **Squeeze** | `S` |
 | Serve the next customer | Tap the stand/queue, or **Serve** | `E` / `Enter` |

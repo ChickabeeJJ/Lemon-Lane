@@ -48,7 +48,7 @@ Rules the code keeps:
 ## Save format
 
 ```json
-{ "schema": 1, "savedAt": 1727430000000, "state": { ...GameState } }
+{ "schema": 2, "savedAt": 1727430000000, "state": { ...GameState } }
 ```
 
 Keys: `lemonlane_save` (primary), `lemonlane_save_backup` (previous primary, refreshed at most once a minute),
@@ -95,10 +95,18 @@ midgame ad at a natural break right after the Sunrise transition. A reward is gr
 timeouts (120 s) or overlapping requests grant nothing and gameplay resumes. Nothing in the core loop depends on ads.
 Outside CrazyGames, ad buttons are hidden (never faked).
 
+## Zones and facilities
+
+The world is four 1200-unit-wide zones laid side by side (`ZONES`, index −1…2; home = 0 spans x 0…1200).
+The camera (`Renderer.setZone`) eases between zone left edges; sky is fixed, clouds and far hills use parallax.
+Each `UpgradeDef` has a `zone`; `FACILITY_IDS` are upgrades that exist as buildings (level 0 = tappable construction
+outline, positions in `core/layout.ts` `FACILITY_SPOTS`). Tree slots 0–4 stand beside the stand, 5–10 are Orchard
+Grove plots (`treeSpot()`, `treeSlotActive()`). Lucky Wheel logic is in `core/wheel.ts`; selling, the Lemon Chute and
+the fountain are in `core/sim.ts`.
+
 ## Rendering
 
-The world is a fixed 1200×675 logical lane scaled with "contain"; sky and ground extend to fill any aspect ratio, so
-the camera never moves (spatial memory). Everything is drawn procedurally with the palette in `render/palette.ts` and the
+Each zone is a fixed 1200×675 logical room scaled with "contain"; sky and ground extend to fill any aspect ratio. Everything is drawn procedurally with the palette in `render/palette.ts` and the
 primitives in `render/draw.ts` (cocoa outlines, soft ground shadows, rounded shapes). UI icons are rendered once from the
 same functions into cached data URLs. Particles are pooled and capped (90). Reduced-motion disables wobble, sway,
 bobbing and particle travel.
@@ -112,5 +120,7 @@ bobbing and particle travel.
   conflict, storage errors, migration chain, validation of NaN/Infinity/unknown IDs
 - `tests/sim.test.ts` — growth boundary, basket cap, golden lemons pay once, press/counter, serving, patience,
   queue bounds, determinism, delta clamping, goals pay once
+- `tests/world.test.ts` — Sell Crate, Lemon Chute, diamond lemons, grove plots, Lucky Wheel cooldown/rewards,
+  fountain income, facility locks, save migration 1 → 2
 - `tests/balance.test.ts` — headless bots (active / casual / automation-first) play the real economy and assert the
   first-ten-minutes pacing and time-to-first-Sunrise

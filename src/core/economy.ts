@@ -77,6 +77,22 @@ export function activeRecipe(g: GameState): RecipeDef {
   return recipeById.get(g.activeRecipe) ?? recipeById.get("classic")!;
 }
 
+/** Coins for one raw lemon sold at the Sell Crate (or down the Lemon Chute). */
+export function rawLemonValue(g: GameState, s: StatBlock, now: number): number {
+  const r = activeRecipe(g);
+  return (r.value / r.lemons) * TUNING.rawLemonShare * s.lemonPrice * incomeMultiplier(g, s, now);
+}
+
+/** Coins per second from the Lemonade Fountain. */
+export function fountainPerSec(g: GameState, s: StatBlock, now: number): number {
+  return (s.passiveIncome / 60) * baseDrinkValue(g, s, now);
+}
+
+/** Lemon trees currently planted (stand trees + grove plots). */
+export function totalTrees(s: StatBlock): number {
+  return slotsOf(s.treeCount) + slotsOf(s.grovePlots);
+}
+
 /** Coins for one standard drink of the active recipe (no customer/premium/combo modifiers). */
 export function baseDrinkValue(g: GameState, s: StatBlock, now: number): number {
   return activeRecipe(g).value * incomeMultiplier(g, s, now);
@@ -159,7 +175,7 @@ export function averageSaleValue(g: GameState, s: StatBlock, now: number): numbe
  */
 export function automatedRates(g: GameState, s: StatBlock, now: number): RateBreakdown {
   const recipe = activeRecipe(g);
-  const trees = slotsOf(s.treeCount);
+  const trees = totalTrees(s);
   const growPerSec = (trees * slotsOf(s.fruitSlots) * s.growthSpeed) / TUNING.fruitGrowTime;
   const pickPerSec = 1 / helperInterval(g, "pip", s);
   const lemonsPerSec = Math.min(growPerSec, pickPerSec);
@@ -170,7 +186,13 @@ export function automatedRates(g: GameState, s: StatBlock, now: number): RateBre
   const servedPerSec = Math.min(drinksPerSec, customersPerSec, serveRate);
   const deliveredPerSec = Math.min(Math.max(0, drinksPerSec - servedPerSec), s.deliveryRate / 60);
   const sale = averageSaleValue(g, s, now);
-  const coinsPerSec = servedPerSec * sale + deliveredPerSec * baseDrinkValue(g, s, now) * TUNING.deliveryValue;
+  // With the Lemon Chute, lemons the press can't keep up with are sold raw.
+  const spareLemons = s.autoSell >= 1 && (g.upgrades.sell_crate ?? 0) > 0 ? Math.max(0, lemonsPerSec - drinksPerSec * recipe.lemons) : 0;
+  const coinsPerSec =
+    servedPerSec * sale +
+    deliveredPerSec * baseDrinkValue(g, s, now) * TUNING.deliveryValue +
+    spareLemons * rawLemonValue(g, s, now) +
+    fountainPerSec(g, s, now);
   return { lemonsPerSec, drinksPerSec, customersPerSec, servedPerSec, deliveredPerSec, coinsPerSec };
 }
 

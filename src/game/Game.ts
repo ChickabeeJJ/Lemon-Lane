@@ -22,14 +22,19 @@ import { automatedRates, collectionStars, computeStats, offlineEarnings, regionC
 import { GROUND_Y, LAYOUT } from "../core/layout";
 import { claimDaily, claimQuest, evaluateQuest, noteCombo, startQuest, type ActiveQuest } from "../core/quests";
 import { createRng, type Rng } from "../core/rng";
-import { harvestAny, harvestTree, pressCanRun, serveFront, squeeze, step, addCoins, type SimContext, type SimEvent } from "../core/sim";
+import { harvestAny, harvestTree, pressCanRun, sellLemons, serveFront, squeeze, step, addCoins, type SimContext, type SimEvent } from "../core/sim";
 import { createFreshState, createSession, type GameState, type SessionState, type Settings } from "../core/state";
 import type { PlatformAdapter, PlatformUser } from "../platform/PlatformAdapter";
 import { Renderer, type ViewExtras } from "../render/Renderer";
 import type { LoadStatus, SaveManager } from "../save/SaveManager";
-import { formatNumber } from "../ui/format";
+import { formatDuration, formatNumber } from "../ui/format";
 import { C } from "../render/palette";
-import { COSMETICS } from "../content/content";
+import { COSMETICS, FACILITY_IDS, ZONES, upgradeById, zoneById } from "../content/content";
+import { upgradeLocked } from "../core/actions";
+import { rawLemonValue, upgradeCost } from "../core/economy";
+import { FACILITY_SPOTS, type FacilitySpotId } from "../core/layout";
+import { spinCooldownLeft, spinWheel, wheelOwned } from "../core/wheel";
+import type { ZoneId } from "../content/types";
 
 const TICK = 1 / 30;
 const SAVE_DEBOUNCE_MS = 2000;
@@ -37,6 +42,7 @@ const SAVE_PERIOD_MS = 15000;
 
 export interface GameHooks {
   toast(text: string, kind?: "info" | "good" | "warn"): void;
+  zoneChanged(zone: ZoneId): void;
   offlineSummary(seconds: number, coins: number, onCollect: (doubled: boolean) => void): void;
   sunriseTransition(): void;
   structureChanged(): void;
@@ -64,6 +70,8 @@ export class Game {
   private sessionMarks = new Set<string>();
   private earnLog: { at: number; amount: number }[] = [];
   private notifiedQuest = -1;
+  /** Current zone slot: -1 grove, 0 stand, 1 market, 2 fair. */
+  zoneIndex = 0;
   private starsSeen = 0;
   private extras: ViewExtras = {
     now: 0,
@@ -204,7 +212,7 @@ export class Game {
         }
       }
       this.tickPresentation(dt);
-      this.renderer.render(this.g, this.s, this.stats, this.extras, this.blocked === 0 ? dt : 0);
+      this.renderer.render(this.g, this.s, this.stats, this.extras, this.blocked === 0 ? dt : 0, dt);
     }
     this.housekeeping();
     requestAnimationFrame(this.frame);
@@ -275,13 +283,35 @@ export class Game {
         r.lemonArc(from.x, from.y, LAYOUT.basket.x, LAYOUT.basket.y - 60, e.golden);
         if (e.by === "helper") this.extras.helperWorking.pip = 0.4;
         this.audio.play("pop");
-        if (e.golden) {
-          r.sparkle(from.x, from.y);
-          r.floatText(from.x, from.y - 20, `+${formatNumber(e.bonus)}`, C.cocoa, 22);
+        if (e.golden || e.diamond) {
+          r.sparkle(from.x, from.y, e.diamond ? 12 : 6);
+          r.floatText(from.x, from.y - 20, `+${formatNumber(e.bonus)}`, e.diamond ? "#3E9BC8" : C.cocoa, e.diamond ? 28 : 22);
           this.audio.play("sparkle");
-          this.hooks.toast(t("ui.toast.golden", { n: formatNumber(e.bonus) }), "good");
-          this.logEarn(e.bonus);
+          this.hooks.toast(t(e.diamond ? "ui.toast.diamond" : "ui.toast.golden", { n: formatNumber(e.bonus) }), "good");
+          if (e.diamond) this.platform.happytime();
+        } else if (e.sold && e.bonus > 0) {
+          const crate = FACILITY_SPOTS.sell_crate;
+          r.floatText(crate.x, crate.y - 150, `+${formatNumber(e.bonus)}`, C.cocoa, 16);
         }
+        if (e.bonus > 0) this.logEarn(e.bonus);
+        break;
+      }
+      case "sell": {
+        const crate = FACILITY_SPOTS.sell_crate;
+        r.floatText(crate.x, crate.y - 170, `+${formatNumber(e.amount)}`, C.cocoa, 28);
+        r.sparkle(crate.x, crate.y - 120, 8);
+        this.audio.play("coin");
+        this.logEarn(e.amount);
+        if (e.by === "player") {
+          this.hooks.toast(t("ui.sellAll", { c: e.count, n: formatNumber(e.amount) }), "good");
+          this.analytics.track("lemons_sold", { count: e.count });
+        }
+        break;
+      }
+      case "fountain": {
+        const f = FACILITY_SPOTS.fountain;
+        r.floatText(f.x, f.y - 200, `+${formatNumber(e.amount)}`, C.cocoa, 18);
+        this.logEarn(e.amount);
         break;
       }
       case "basketFull":
@@ -413,7 +443,119 @@ export class Game {
     if (!hit) return;
     if (hit.kind === "tree") this.pick(hit.index);
     else if (hit.kind === "press") this.squeeze();
+    else if (hit.kind === "facility") this.tapFacility(hit.id);
     else this.serve();
+  }
+
+  // -------------------------------------------------------------------------
+  // Exploring
+
+  zoneId(): ZoneId {
+    return ZONES.find((z) => z.index === this.zoneIndex)?.id ?? "home";
+  }
+
+  goZone(index: number, snap = false): void {
+    const min = Math.min(...ZONES.map((z) => z.index));
+    const max = Math.max(...ZONES.map((z) => z.index));
+    const next = Math.max(min, Math.min(max, index));
+    if (next === this.zoneIndex && !snap) return;
+    this.zoneIndex = next;
+    this.renderer.setZone(next, snap || this.g.settings.reducedMotion);
+    this.audio.play("click");
+    this.hooks.zoneChanged(this.zoneId());
+    this.analytics.track("zone_visit", { zone: this.zoneId() });
+  }
+
+  walk(delta: number): void {
+    this.goZone(this.zoneIndex + delta);
+  }
+
+  goToZoneOf(id: UpgradeId): void {
+    const def = upgradeById.get(id);
+    const z = def ? zoneById.get(def.zone) : undefined;
+    if (z) this.goZone(z.index);
+  }
+
+  /** Tap on a facility in the world: build it, or use it. */
+  tapFacility(id: UpgradeId): void {
+    const lv = this.g.upgrades[id] ?? 0;
+    const spot = FACILITY_SPOTS[id as FacilitySpotId] ?? { x: LAYOUT.stand.x, y: GROUND_Y };
+    if (lv > 0 && id !== "grove_plot") {
+      if (id === "sell_crate") return void this.sell();
+      if (id === "lucky_wheel") return void this.spin();
+      this.renderer.floatText(spot.x, spot.y - 200, `${nameOf("upgrade", id)} · ${t("ui.level", { n: lv })}`, C.cocoa, 18);
+      return;
+    }
+    if (upgradeLocked(this.g, id)) {
+      this.audio.play("deny");
+      this.hooks.toast(t("ui.lockedRegion", { ref: nameOf("region", upgradeById.get(id)!.region) }), "info");
+      return;
+    }
+    const cost = upgradeCost(this.g, id, this.stats);
+    if (this.g.coins < cost) {
+      this.audio.play("deny");
+      this.hooks.toast(t("ui.need", { n: formatNumber(cost - this.g.coins) }), "info");
+      return;
+    }
+    if (this.buyUpgrade(id)) this.hooks.toast(t("ui.toast.built", { ref: nameOf("upgrade", id) }), "good");
+  }
+
+  canSell(): boolean {
+    return (this.g.upgrades.sell_crate ?? 0) > 0 && this.g.lemons > 0;
+  }
+
+  sell(): void {
+    if ((this.g.upgrades.sell_crate ?? 0) <= 0) return;
+    if (sellLemons(this.g, this.ctx(), "player") <= 0) {
+      this.audio.play("deny");
+      this.hooks.toast(t("ui.nothingToSell"), "info");
+      return;
+    }
+    this.requestSave();
+  }
+
+  rawLemonPrice(): number {
+    return rawLemonValue(this.g, this.stats, Date.now());
+  }
+
+  spinReadyIn(): number {
+    return spinCooldownLeft(this.g, this.stats, Date.now());
+  }
+
+  wheelOwned(): boolean {
+    return wheelOwned(this.g);
+  }
+
+  private spinning = false;
+
+  spin(): void {
+    if (this.spinning) return;
+    const res = spinWheel(this.g, this.stats, this.rng, Date.now(), this.incomePerSec());
+    if (!res) {
+      this.audio.play("deny");
+      const left = this.spinReadyIn();
+      this.hooks.toast(t("ui.spinIn", { t: formatDuration(left) }), "info");
+      return;
+    }
+    this.spinning = true;
+    this.analytics.track("wheel_spin", { reward: res.kind });
+    this.requestSave(true);
+    this.audio.play("whoosh");
+    this.renderer.spinWheel(res.segment, this.g.settings.reducedMotion);
+    const wheel = FACILITY_SPOTS.lucky_wheel;
+    setTimeout(
+      () => {
+        this.spinning = false;
+        const key = `ui.wheel.${res.kind}`;
+        this.hooks.toast(t(key, { n: formatNumber(res.amount) }), "good");
+        this.renderer.sparkle(wheel.x, wheel.y - 175, 12);
+        this.audio.play(res.kind === "bigCoins" ? "unlock" : "sparkle");
+        if (res.kind === "coins" || res.kind === "bigCoins") this.logEarn(res.amount);
+        this.stats = computeStats(this.g);
+        this.hooks.structureChanged();
+      },
+      this.g.settings.reducedMotion ? 100 : 2700,
+    );
   }
 
   hoverTarget(cssX: number, cssY: number): boolean {
@@ -436,7 +578,12 @@ export class Game {
   buyUpgrade(id: UpgradeId): boolean {
     const res = buyUpgrade(this.g, id, this.stats);
     const ok = this.afterPurchase(res, "upgrade_purchase", { id, level: this.g.upgrades[id] ?? 0 });
-    if (ok) this.celebrateStation(id);
+    if (ok) {
+      // A newly built facility is worth seeing: walk over to it.
+      if (this.g.upgrades[id] === 1 && (FACILITY_IDS.includes(id) || id === "grove_plot")) this.goToZoneOf(id);
+      if (id === "grove_plot") this.goToZoneOf(id);
+      this.celebrateStation(id);
+    }
     return ok;
   }
 
@@ -448,7 +595,8 @@ export class Game {
       signboard: { x: LAYOUT.stand.x, y: GROUND_Y - 300 },
       stand_counter: { x: LAYOUT.stand.x, y: GROUND_Y - 120 },
     };
-    const p = at[id] ?? { x: LAYOUT.stand.x, y: GROUND_Y - 120 };
+    const f = FACILITY_SPOTS[id as FacilitySpotId];
+    const p = at[id] ?? (f ? { x: f.x, y: f.y - f.h * 0.6 } : { x: LAYOUT.stand.x, y: GROUND_Y - 120 });
     this.renderer.sparkle(p.x, p.y, 8);
     if (id === "lemon_tree") this.extras.treeShake[0] = 1;
     if (id === "juice_press") this.extras.pressSquash = 1;

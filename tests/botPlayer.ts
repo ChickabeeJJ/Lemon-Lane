@@ -14,7 +14,7 @@ import {
 import { automatedRates, computeStats, helperCost, helpersHired, recipeCost, regionCost, slotsOf, sunriseTokens, upgradeCost } from "../src/core/economy";
 import { claimQuest, evaluateQuest, noteCombo, startQuest } from "../src/core/quests";
 import { createRng } from "../src/core/rng";
-import { harvestAny, serveFront, squeeze, step, type SimContext } from "../src/core/sim";
+import { harvestAny, sellLemons, serveFront, squeeze, step, type SimContext } from "../src/core/sim";
 import { createFreshState, createSession, type GameState, type SessionState } from "../src/core/state";
 
 export type Profile = "active" | "casual" | "automation";
@@ -61,6 +61,8 @@ export function runBot(profile: Profile, minutes: number, seed = 1, start?: Game
       for (let k = 0; k < 4 && harvestAny(g, c, "player"); k++);
       squeeze(g, c);
       serveFront(g, s, c, "player");
+      // Sell when the basket is full (players do this at the Sell Crate).
+      if (g.lemons >= slotsOf(c.stats.basketCap)) sellLemons(g, c, "player");
     }
     if (i % 4 === 0) shop(g, tSec, log, earnedPerSec);
     if (i % 40 === 0) {

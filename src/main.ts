@@ -5,20 +5,22 @@ import { Game } from "./game/Game";
 import { createPlatform } from "./platform/PlatformAdapter";
 import { SaveManager } from "./save/SaveManager";
 import { UI } from "./ui/UI";
+import { BootScreen } from "./ui/Boot";
 
 async function boot(): Promise<void> {
-  const bootEl = document.getElementById("boot")!;
+  const boot = new BootScreen();
   const appEl = document.getElementById("app")!;
-  const msg = bootEl.querySelector(".boot-msg");
-  if (msg) msg.textContent = t("ui.loading");
 
+  boot.stage(0.1, 0.6, "ui.boot.sdk");
   const platform = await createPlatform();
   platform.loadingStart();
 
+  boot.stage(0.65, 0.75, "ui.boot.save");
   const saves = new SaveManager(platform.storage);
   const loaded = saves.load(Date.now());
   if (loaded.issues.length) console.info("[save] load notes:", loaded.issues);
 
+  boot.stage(0.8, 0.95, "ui.boot.paint");
   const ui = new UI(appEl);
   const game = new Game(platform, saves, loaded.state, loaded.status);
   game.setHooks(ui);
@@ -33,9 +35,9 @@ async function boot(): Promise<void> {
   if (goalEl) ro.observe(goalEl);
 
   appEl.hidden = false;
-  bootEl.remove();
   fit();
   platform.loadingStop();
+  await boot.finish();
   await game.start();
 
   // QA hook: inspect state/analytics from the console. Contains no personal data.
@@ -45,5 +47,5 @@ async function boot(): Promise<void> {
 boot().catch((e) => {
   console.error("[boot] failed", e);
   const msg = document.querySelector("#boot .boot-msg");
-  if (msg) msg.textContent = "Something went wrong while loading. Please refresh the page.";
+  if (msg) msg.textContent = t("ui.bootFailed");
 });

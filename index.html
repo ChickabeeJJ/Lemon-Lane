@@ -6,14 +6,74 @@
     <meta name="theme-color" content="#A9DDF5" />
     <title>Lemon Lane: Sunny Stand</title>
     <link rel="icon" href="./favicon.svg" type="image/svg+xml" />
+    <style>
+      /* Critical loading-screen styles: inline so the first paint is already on-brand. */
+      html, body { margin: 0; height: 100%; overflow: hidden; background: #a9ddf5; }
+      #boot {
+        position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; overflow: hidden;
+        background: linear-gradient(#8fd0f0 0%, #a9ddf5 45%, #fff4d6 100%);
+        font-family: "Baloo 2", "Fredoka", ui-rounded, "Arial Rounded MT Bold", "Trebuchet MS", system-ui, sans-serif;
+        color: #5a4638; transition: opacity 0.5s ease, transform 0.5s ease;
+      }
+      #boot.done { opacity: 0; transform: scale(1.04); pointer-events: none; }
+      .boot-rays {
+        position: absolute; left: 50%; top: 42%; width: 220vmax; height: 220vmax; margin: -110vmax 0 0 -110vmax;
+        background: repeating-conic-gradient(rgba(255, 244, 214, 0.55) 0deg 9deg, rgba(255, 244, 214, 0) 9deg 22.5deg);
+        animation: boot-spin 40s linear infinite; pointer-events: none;
+      }
+      .boot-sun {
+        position: absolute; left: 50%; top: 42%; width: 46vmin; height: 46vmin; margin: -23vmin 0 0 -23vmin; border-radius: 50%;
+        background: radial-gradient(circle, rgba(255, 217, 90, 0.75) 0%, rgba(255, 217, 90, 0.25) 55%, rgba(255, 217, 90, 0) 70%);
+      }
+      .boot-cloud { position: absolute; width: 150px; height: 46px; border-radius: 30px; background: #fffdf7; opacity: 0.9; animation: boot-drift 30s linear infinite; }
+      .boot-cloud::before, .boot-cloud::after { content: ""; position: absolute; background: #fffdf7; border-radius: 50%; }
+      .boot-cloud::before { width: 64px; height: 64px; left: 22px; top: -30px; }
+      .boot-cloud::after { width: 48px; height: 48px; left: 74px; top: -20px; }
+      .boot-cloud.c1 { top: 12%; left: -160px; }
+      .boot-cloud.c2 { top: 26%; left: -160px; animation-duration: 42s; animation-delay: -18s; transform: scale(0.7); }
+      .boot-cloud.c3 { top: 6%; left: -160px; animation-duration: 55s; animation-delay: -35s; transform: scale(0.55); }
+      .boot-hills { position: absolute; left: -10%; right: -10%; bottom: -8vh; height: 32vh; pointer-events: none; }
+      .boot-hills::before, .boot-hills::after { content: ""; position: absolute; bottom: 0; border-radius: 50% 50% 0 0; border: 4px solid #3f7650; }
+      .boot-hills::before { left: 0; width: 70%; height: 100%; background: #9bd58a; }
+      .boot-hills::after { right: 0; width: 60%; height: 80%; background: #79c96b; }
+      .boot-card { position: relative; z-index: 2; text-align: center; width: min(440px, 92vw); }
+      .boot-mascot { width: min(300px, 70vw); height: auto; display: block; margin: 0 auto -10px; filter: drop-shadow(0 6px 0 rgba(90, 70, 56, 0.18)); }
+      .boot-title { margin: 0; font-size: clamp(44px, 12vw, 72px); line-height: 0.95; font-weight: 800; letter-spacing: 1px; color: #ffd95a;
+        text-shadow: 0 3px 0 #5a4638, 3px 0 0 #5a4638, -3px 0 0 #5a4638, 0 -3px 0 #5a4638, 2px 2px 0 #5a4638, -2px 2px 0 #5a4638, 2px -2px 0 #5a4638, -2px -2px 0 #5a4638, 0 8px 0 rgba(90, 70, 56, 0.35); }
+      .boot-title span { display: inline-block; animation: boot-bob 2.4s ease-in-out infinite; }
+      .boot-title span:nth-child(2) { animation-delay: 0.3s; color: #fffdf7; }
+      .boot-ribbon { position: relative; display: inline-block; margin: 10px 0 18px; padding: 4px 26px; background: #f28c7a; color: #fffdf7;
+        font-size: 20px; font-weight: 800; border: 3px solid #5a4638; border-radius: 6px; box-shadow: 0 4px 0 #5a4638; }
+      .boot-bar { position: relative; height: 26px; margin: 0 8px; border: 4px solid #5a4638; border-radius: 999px; background: #fff4d6; box-shadow: 0 4px 0 rgba(90, 70, 56, 0.35); }
+      .boot-bar > i { position: absolute; left: 0; top: 0; bottom: 0; width: 4%; border-radius: 999px;
+        background: repeating-linear-gradient(-45deg, #ffd95a 0 12px, #ffe680 12px 24px); background-size: 34px 34px; animation: boot-juice 0.8s linear infinite; }
+      .boot-slice { position: absolute; top: 50%; left: 4%; width: 38px; height: 38px; margin: -19px 0 0 -19px; border-radius: 50%; border: 3px solid #5a4638;
+        background: radial-gradient(circle, #fffdf7 0 18%, transparent 19%), repeating-conic-gradient(#ffe680 0 36deg, #fff4d6 36deg 40deg); box-shadow: inset 0 0 0 4px #ffd95a;
+        animation: boot-spin 2s linear infinite; }
+      .boot-msg { margin: 14px 0 4px; font-weight: 800; font-size: 17px; }
+      .boot-tip { margin: 0; min-height: 2.6em; font-size: 14px; opacity: 0.85; transition: opacity 0.3s; }
+      @keyframes boot-spin { to { transform: rotate(360deg); } }
+      @keyframes boot-bob { 50% { transform: translateY(-8px) rotate(-2deg); } }
+      @keyframes boot-drift { to { left: calc(100% + 160px); } }
+      @keyframes boot-juice { to { background-position: 34px 0; } }
+      @media (prefers-reduced-motion: reduce) { .boot-rays, .boot-title span, .boot-cloud, .boot-slice, .boot-bar > i { animation: none; } }
+    </style>
   </head>
   <body>
     <div id="boot" role="status" aria-live="polite">
+      <div class="boot-sun" aria-hidden="true"></div>
+      <div class="boot-rays" aria-hidden="true"></div>
+      <div class="boot-cloud c1" aria-hidden="true"></div>
+      <div class="boot-cloud c2" aria-hidden="true"></div>
+      <div class="boot-cloud c3" aria-hidden="true"></div>
+      <div class="boot-hills" aria-hidden="true"></div>
       <div class="boot-card">
-        <div class="boot-lemon" aria-hidden="true"></div>
-        <h1>Lemon Lane</h1>
-        <p class="boot-sub">Sunny Stand</p>
+        <canvas class="boot-mascot" width="600" height="420" aria-hidden="true"></canvas>
+        <h1 class="boot-title"><span>Lemon</span> <span>Lane</span></h1>
+        <p class="boot-ribbon">Sunny Stand</p>
+        <div class="boot-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="4" aria-label="Loading"><i></i><b class="boot-slice"></b></div>
         <p class="boot-msg">Warming up the lane…</p>
+        <p class="boot-tip"></p>
       </div>
     </div>
     <div id="app" hidden></div>

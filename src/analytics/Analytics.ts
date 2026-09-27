@@ -22,7 +22,10 @@ export type AnalyticsEvent =
   | "load_success"
   | "load_conflict"
   | "session_2min"
-  | "session_10min";
+  | "session_10min"
+  | "wheel_spin"
+  | "lemons_sold"
+  | "zone_visit";
 
 export type Payload = Record<string, string | number | boolean>;
 

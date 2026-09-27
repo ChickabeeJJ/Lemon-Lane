@@ -1,0 +1,20 @@
+{
+  "name": "lemon-lane",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Lemon Lane: Sunny Stand — a cozy 2D idle tycoon for CrazyGames.",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "validate": "vitest run tests/content.test.ts"
+  },
+  "devDependencies": {
+    "typescript": "^7.0.2",
+    "vite": "^8.3.1",
+    "vitest": "^5.0.2"
+  }
+}
